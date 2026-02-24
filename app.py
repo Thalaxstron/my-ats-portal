@@ -24,18 +24,26 @@ except Exception as e:
     st.error(f"Database Connection Error: {e}")
     st.stop()
 
+# --- FIXED REFERENCE ID LOGIC ---
 def get_next_ref_id():
-    all_ids = cand_sheet.col_values(1)
+    all_ids = cand_sheet.col_values(1) # Reference_ID column
     if len(all_ids) <= 1:
         return "E00001"
-    last_id = all_ids[-1]
-    try:
-        if last_id.startswith("E"):
-            num = int(last_id[1:]) + 1
-            return f"E{num:05d}"
-    except:
-        pass
-    return f"E{len(all_ids):05d}"
+    
+    # Filter only E-prefixed IDs and find the max
+    valid_ids = []
+    for val in all_ids[1:]:
+        if str(val).startswith("E"):
+            try:
+                valid_ids.append(int(str(val)[1:]))
+            except:
+                continue
+    
+    if not valid_ids:
+        return "E00001"
+    
+    next_num = max(valid_ids) + 1
+    return f"E{next_num:05d}"
 
 if 'logged_in' not in st.session_state:
     st.session_state.logged_in = False
@@ -49,7 +57,7 @@ if not st.session_state.logged_in:
         if st.button("Login"):
             users_df = pd.DataFrame(user_sheet.get_all_records())
             user_row = users_df[(users_df['Mail_ID'] == u_mail) & (users_df['Password'].astype(str) == u_pass)]
-            if not user_row.empty:
+            if user_row.empty == False:
                 st.session_state.logged_in = True
                 st.session_state.user_full_name = user_row.iloc[0]['Username']
                 st.rerun()
@@ -66,7 +74,10 @@ else:
     if menu == "New Entry":
         st.header("📝 Candidate Shortlist Entry")
         
+        # Data loading with column name cleaning
         clients_df = pd.DataFrame(client_sheet.get_all_records())
+        clients_df.columns = [c.strip() for c in clients_df.columns] # Remove hidden spaces
+        
         client_options = ["-- Select Client --"] + sorted(clients_df['Client Name'].unique().tolist())
         
         c1, c2 = st.columns(2)
@@ -84,10 +95,17 @@ else:
                 
                 job_title = st.selectbox("Select Position", sorted(list(set(all_pos))))
                 
+                # Fetching details with Case Insensitive column check
                 client_info = client_rows.iloc[0]
                 db_address = client_info.get('Address', 'Check with HR')
-                # Map Link Fix
-                db_map = client_info.get('Map Link') or client_info.get('Google Map Link') or 'No Link'
+                
+                # Dynamic Map Link Search
+                db_map = "No Link"
+                for col in ['Map Link', 'Google Map Link', 'Map']:
+                    if col in client_info and str(client_info[col]).strip() != "":
+                        db_map = str(client_info[col]).strip()
+                        break
+                
                 db_contact_person = client_info.get('Contact Person', 'HR Manager')
             else:
                 job_title = st.selectbox("Select Position", ["Please select client"])
