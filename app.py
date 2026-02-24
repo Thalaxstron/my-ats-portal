@@ -24,7 +24,6 @@ except Exception as e:
     st.error(f"Database Connection Error: {e}")
     st.stop()
 
-# --- REF ID LOGIC (Serial E00001...) ---
 def get_next_ref_id():
     all_ids = cand_sheet.col_values(1)
     if len(all_ids) <= 1:
@@ -85,10 +84,10 @@ else:
                 
                 job_title = st.selectbox("Select Position", sorted(list(set(all_pos))))
                 
-                # Fetching Client Details from Database
                 client_info = client_rows.iloc[0]
                 db_address = client_info.get('Address', 'Check with HR')
-                db_map = client_info.get('Map Link', 'Will be shared soon')
+                # Map Link Fix
+                db_map = client_info.get('Map Link') or client_info.get('Google Map Link') or 'No Link'
                 db_contact_person = client_info.get('Contact Person', 'HR Manager')
             else:
                 job_title = st.selectbox("Select Position", ["Please select client"])
@@ -96,7 +95,7 @@ else:
             
             comm_date = st.date_input("Commitment Date", datetime.now())
 
-        if st.button("Save Entry & Generate Professional WhatsApp"):
+        if st.button("Save & Generate WhatsApp"):
             if selected_client == "-- Select Client --" or not c_name or not c_phone:
                 st.warning("All fields are mandatory!")
             else:
@@ -105,7 +104,6 @@ else:
                     today = datetime.now().strftime("%d-%m-%Y")
                     c_date_str = comm_date.strftime("%d-%m-%Y")
                     
-                    # Saving to ATS_Data
                     new_data = [
                         ref_id, today, c_name, c_phone, selected_client, 
                         job_title, c_date_str, "Shortlisted", 
@@ -113,7 +111,6 @@ else:
                     ]
                     cand_sheet.append_row(new_data)
                     
-                    # --- DYNAMIC WHATSAPP FORMAT (PICKING FROM DATABASE) ---
                     wa_msg = (
                         f"Dear *{c_name}*,\n\n"
                         f"Congratulations, Upon reviewing your application, we would like to invite you for Direct interview and get to know you better.\n\n"
@@ -137,4 +134,4 @@ else:
                     st.success(f"✅ Success! Reference ID: {ref_id}")
                     st.markdown(f"[📲 Send WhatsApp to {c_name}](https://wa.me/91{c_phone}?text={urllib.parse.quote(wa_msg)})")
                 except Exception as e:
-                    st.error(f"Error during save: {e}")
+                    st.error(f"Error: {e}")
