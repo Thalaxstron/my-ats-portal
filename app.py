@@ -24,7 +24,7 @@ except Exception as e:
     st.error(f"Database Connection Error: {e}")
     st.stop()
 
-# --- REF ID LOGIC ---
+# --- REF ID LOGIC (Serial E00001...) ---
 def get_next_ref_id():
     all_ids = cand_sheet.col_values(1)
     if len(all_ids) <= 1:
@@ -34,10 +34,9 @@ def get_next_ref_id():
         if last_id.startswith("E"):
             num = int(last_id[1:]) + 1
             return f"E{num:05d}"
-        else:
-            return f"E{len(all_ids):05d}"
     except:
-        return f"E{len(all_ids):05d}"
+        pass
+    return f"E{len(all_ids):05d}"
 
 if 'logged_in' not in st.session_state:
     st.session_state.logged_in = False
@@ -68,42 +67,36 @@ else:
     if menu == "New Entry":
         st.header("📝 Candidate Shortlist Entry")
         
-        # Client Data Loading
         clients_df = pd.DataFrame(client_sheet.get_all_records())
         client_options = ["-- Select Client --"] + sorted(clients_df['Client Name'].unique().tolist())
         
-        # UI WITHOUT st.form for Dynamic Updates
         c1, c2 = st.columns(2)
         with c1:
-            c_name = st.text_input("Candidate Name", key="cname")
-            c_phone = st.text_input("Contact Number", key="cphone")
-            selected_client = st.selectbox("Client Name", client_options, key="client_sel")
+            c_name = st.text_input("Candidate Name")
+            c_phone = st.text_input("Contact Number")
+            selected_client = st.selectbox("Client Name", client_options)
         
         with c2:
-            # Position logic - Refresh aagum pothu correct-ah position kattiye theerum
             if selected_client != "-- Select Client --":
-                # Multiple rows for same client handling
-                specific_client_rows = clients_df[clients_df['Client Name'] == selected_client]
-                
-                # Ellaa position-aiyum serthu oru list-ah mathurom
+                client_rows = clients_df[clients_df['Client Name'] == selected_client]
                 all_pos = []
-                for idx, row in specific_client_rows.iterrows():
+                for idx, row in client_rows.iterrows():
                     all_pos.extend([p.strip() for p in str(row['Position']).split(',')])
                 
                 job_title = st.selectbox("Select Position", sorted(list(set(all_pos))))
                 
-                # Fetch first row details for Venue/Map
-                client_info = specific_client_rows.iloc[0]
-                addr = client_info.get('Address', 'Contact HR')
-                mlink = client_info.get('Map Link', 'No Link')
-                cperson = client_info.get('Contact Person', 'HR Team')
-                sr_days = client_info.get('SR Days', '0')
+                # Fetching Client Details from Database
+                client_info = client_rows.iloc[0]
+                db_address = client_info.get('Address', 'Check with HR')
+                db_map = client_info.get('Map Link', 'Will be shared soon')
+                db_contact_person = client_info.get('Contact Person', 'HR Manager')
             else:
                 job_title = st.selectbox("Select Position", ["Please select client"])
+                db_address, db_map, db_contact_person = "", "", ""
             
             comm_date = st.date_input("Commitment Date", datetime.now())
 
-        if st.button("Save Entry & Get WhatsApp Link"):
+        if st.button("Save Entry & Generate Professional WhatsApp"):
             if selected_client == "-- Select Client --" or not c_name or not c_phone:
                 st.warning("All fields are mandatory!")
             else:
@@ -112,7 +105,7 @@ else:
                     today = datetime.now().strftime("%d-%m-%Y")
                     c_date_str = comm_date.strftime("%d-%m-%Y")
                     
-                    # Row data for ATS_Data
+                    # Saving to ATS_Data
                     new_data = [
                         ref_id, today, c_name, c_phone, selected_client, 
                         job_title, c_date_str, "Shortlisted", 
@@ -120,20 +113,28 @@ else:
                     ]
                     cand_sheet.append_row(new_data)
                     
-                    # Professional WhatsApp Format
+                    # --- DYNAMIC WHATSAPP FORMAT (PICKING FROM DATABASE) ---
                     wa_msg = (
-                        f"*INTERVIEW INVITE - {selected_client}*\n"
-                        f"----------------------------------\n"
                         f"Dear *{c_name}*,\n\n"
-                        f"Your interview for *{job_title}* has been scheduled.\n\n"
-                        f"📅 *Date:* {c_date_str}\n"
-                        f"📍 *Venue:* {addr}\n"
-                        f"🗺️ *Map:* {mlink}\n"
-                        f"📞 *Contact Person:* {cperson}\n\n"
-                        f"Regards,\n{st.session_state.user_full_name}\n*Takecare Manpower Services*"
+                        f"Congratulations, Upon reviewing your application, we would like to invite you for Direct interview and get to know you better.\n\n"
+                        f"Please write your resume:\n"
+                        f"*Reference:* Takecare Manpower Services Pvt Ltd\n\n"
+                        f"*Position:* {job_title}\n"
+                        f"*Date:* {c_date_str}\n"
+                        f"*Interview Time:* 10:30 am\n\n"
+                        f"*Interview venue:*\n"
+                        f"*{selected_client}*,\n"
+                        f"{db_address}\n\n"
+                        f"*Map Location:* {db_map}\n"
+                        f"*Contact Person:* {db_contact_person}\n\n"
+                        f"Please Let me know when you arrive at the interview location.\n"
+                        f"All the best....\n\n"
+                        f"Regards\n"
+                        f"*{st.session_state.user_full_name}*\n"
+                        f"Takecare HR Team"
                     )
                     
-                    st.success(f"✅ Data Saved! Reference ID: {ref_id}")
-                    st.markdown(f"[📲 Click to Send WhatsApp to {c_name}](https://wa.me/91{c_phone}?text={urllib.parse.quote(wa_msg)})")
+                    st.success(f"✅ Success! Reference ID: {ref_id}")
+                    st.markdown(f"[📲 Send WhatsApp to {c_name}](https://wa.me/91{c_phone}?text={urllib.parse.quote(wa_msg)})")
                 except Exception as e:
                     st.error(f"Error during save: {e}")
