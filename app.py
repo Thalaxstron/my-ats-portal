@@ -5,96 +5,111 @@ from google.oauth2.service_account import Credentials
 from datetime import datetime, timedelta
 
 # --- 1. PAGE SETUP ---
-st.set_page_config(page_title="Takecare ATS Portal", layout="wide")
+st.set_page_config(page_title="Takecare ATS Portal", layout="centered")
 
-# Session Stability (Refresh pannaalum login pogaadhu)
+# Session Stability
 if 'logged_in' not in st.session_state:
     st.session_state.logged_in = False
 if 'user_full_name' not in st.session_state:
     st.session_state.user_full_name = ""
 
-# --- 2. THEME UI (Winner Background & Glass-morphism) ---
+# --- 2. ADVANCED CSS (Blue-Red Gradient & Responsive Design) ---
 st.markdown("""
     <style>
+    /* Gradient Background */
     .stApp {
-        background: url("https://images.unsplash.com/photo-1551836022-d5d88e9218df?ixlib=rb-4.0.3&auto=format&fit=crop&w=1920&q=80");
-        background-size: cover;
-        background-position: center;
+        background: linear-gradient(135deg, #0d47a1 0%, #b71c1c 100%);
         background-attachment: fixed;
     }
     
-    .login-box {
-        background: rgba(255, 255, 255, 0.9);
-        backdrop-filter: blur(12px);
-        padding: 40px;
-        border-radius: 25px;
-        box-shadow: 0px 20px 40px rgba(0,0,0,0.3);
+    /* Login Box Container */
+    .login-container {
+        background-color: rgba(255, 255, 255, 0.95);
+        padding: 30px;
+        border-radius: 20px;
+        box-shadow: 0px 10px 30px rgba(0,0,0,0.3);
         text-align: center;
-        max-width: 450px;
+        width: 100%;
+        max-width: 400px;
         margin: auto;
     }
 
-    .ats-title {
-        color: #0d47a1;
+    .company-name {
+        color: white;
         font-family: 'Arial Black', sans-serif;
         font-size: 28px;
-        margin-top: 15px;
+        text-align: center;
+        margin-bottom: 10px;
     }
 
-    /* Input Styling */
+    .ats-title {
+        color: #333;
+        font-weight: bold;
+        font-size: 20px;
+        margin-bottom: 20px;
+        letter-spacing: 1px;
+    }
+
+    /* Input Box Styles */
     .stTextInput input {
-        border-radius: 12px !important;
-        height: 50px !important;
-        border: 1px solid #0d47a1 !important;
+        border-radius: 8px !important;
+        background-color: white !important;
+        border: 1px solid #ccc !important;
+        padding-left: 35px !important;
     }
 
+    /* Button Styling */
     .stButton>button {
         background: #0d47a1;
         color: white;
-        border-radius: 10px;
-        height: 55px;
+        border-radius: 8px;
+        height: 45px;
         font-weight: bold;
-        font-size: 20px;
         width: 100%;
         border: none;
-        transition: 0.3s;
     }
     
     .stButton>button:hover {
-        background: #1565c0;
-        transform: scale(1.02);
+        background: #b71c1c;
+        color: white;
     }
 
+    /* Remove Streamlit branding */
     header, footer {visibility: hidden;}
     </style>
     """, unsafe_allow_html=True)
 
-# --- 3. DB CONNECTION ---
+# --- 3. DATABASE CONNECTION ---
 @st.cache_resource
 def get_gsheet_client():
     scope = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
     creds = Credentials.from_service_account_info(st.secrets["gcp_service_account"], scopes=scope)
     return authorize(creds)
 
-# --- 4. APP FLOW ---
+# --- 4. LOGIN LOGIC ---
 if not st.session_state.logged_in:
-    st.write("#")
-    col1, col2, col3 = st.columns([1, 1.3, 1])
+    # Company Name at Top Center
+    st.markdown('<div class="company-name">TAKECARE MANPOWER SERVICES</div>', unsafe_allow_html=True)
     
-    with col2:
-        st.markdown('<div class="login-box">', unsafe_allow_html=True)
-        # Using placeholder for logo - replace with your actual URL
-        st.image("https://i.ibb.co/6R2M3rD/logo-original.png", width=350)
+    # Login Box
+    with st.container():
+        st.markdown('<div class="login-container">', unsafe_allow_html=True)
         st.markdown('<p class="ats-title">ATS LOGIN</p>', unsafe_allow_html=True)
         
-        u_mail = st.text_input("👤 EMAIL ID", placeholder="example@takecare.com")
-        u_pass = st.text_input("🔒 PASSWORD", placeholder="••••••••", type="password")
+        # Email ID with Icon Label
+        u_mail = st.text_input("👤 EMAIL ID", placeholder="EMAIL ID", label_visibility="visible")
         
-        c1, c2 = st.columns(2)
-        with c1: st.checkbox("Remember Me")
-        with c2: st.markdown("<p style='font-size:12px; text-align:right;'>Forgot Password?<br><b style='color:#0d47a1;'>Contact Admin</b></p>", unsafe_allow_html=True)
+        # Password with Icon and Toggle
+        u_pass = st.text_input("🔒 PASSWORD", placeholder="PASSWORD", type="password", label_visibility="visible")
         
-        if st.button("LOGIN"):
+        # Remember Me and Forget Password
+        col_a, col_b = st.columns(2)
+        with col_a:
+            remember = st.toggle("Remember Me")
+        with col_b:
+            st.markdown("<p style='font-size:12px; color:grey; margin-top:5px;'>Forgot Password?<br><b>Contact Admin</b></p>", unsafe_allow_html=True)
+        
+        if st.button("LOGIN SUCCESSFUL"):
             try:
                 client = get_gsheet_client()
                 sh = client.open("ATS_Cloud_Database") 
@@ -103,25 +118,23 @@ if not st.session_state.logged_in:
                 user_match = users_df[(users_df['Mail_ID'] == u_mail) & (users_df['Password'].astype(str) == u_pass)]
                 
                 if not user_match.empty:
-                    st.toast("Welcome Winner!", icon="🏆")
+                    st.success("Login Successful!")
                     st.session_state.logged_in = True
                     st.session_state.user_full_name = user_match.iloc[0]['Username']
                     st.rerun()
                 else:
                     st.error("Incorrect username or password")
             except:
-                st.error("Database Connection Failed.")
+                st.error("Database connection failed.")
+        
         st.markdown('</div>', unsafe_allow_html=True)
 
 else:
-    # --- DASHBOARD (Persistence Guaranteed) ---
-    st.sidebar.markdown(f"### 🏆 Winner: {st.session_state.user_full_name}")
-    menu = st.sidebar.radio("Navigate", ["Tracking Dashboard", "New Shortlist", "Logout"])
-    
-    if menu == "Logout":
+    # --- DASHBOARD LOGIC (STAYS PERSISTENT) ---
+    st.sidebar.write(f"Logged in as: **{st.session_state.user_full_name}**")
+    if st.sidebar.button("Logout"):
         st.session_state.logged_in = False
         st.rerun()
-    
-    if menu == "Tracking Dashboard":
-        st.header("🔄 Real-time Tracking Dashboard")
-        # Dashboard logic goes here...
+
+    st.header("🏆 Candidate Tracking Dashboard")
+    st.write("Welcome to the internal system.")
