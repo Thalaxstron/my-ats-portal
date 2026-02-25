@@ -13,60 +13,73 @@ if 'logged_in' not in st.session_state:
 if 'user_full_name' not in st.session_state:
     st.session_state.user_full_name = ""
 
-# --- 2. ADVANCED CSS (Blue-Red Gradient & Responsive Design) ---
+# --- 2. PREMIUM CUSTOM CSS ---
 st.markdown("""
     <style>
-    /* Gradient Background */
+    /* Gradient Background Blue-Red Mix */
     .stApp {
-        background: linear-gradient(135deg, #0d47a1 0%, #b71c1c 100%);
+        background: linear-gradient(135deg, #0d47a1 10%, #d32f2f 100%);
         background-attachment: fixed;
     }
     
-    /* Login Box Container */
+    /* Login Box (Rounded Rectangle) */
     .login-container {
         background-color: rgba(255, 255, 255, 0.95);
-        padding: 30px;
-        border-radius: 20px;
-        box-shadow: 0px 10px 30px rgba(0,0,0,0.3);
+        padding: 40px;
+        border-radius: 25px;
+        box-shadow: 0px 15px 35px rgba(0,0,0,0.4);
         text-align: center;
         width: 100%;
-        max-width: 400px;
+        max-width: 450px;
         margin: auto;
     }
 
-    .company-name {
+    .company-header {
         color: white;
         font-family: 'Arial Black', sans-serif;
-        font-size: 28px;
+        font-size: 32px;
+        text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
         text-align: center;
-        margin-bottom: 10px;
+        margin-bottom: 20px;
     }
 
     .ats-title {
-        color: #333;
+        color: #0d47a1;
         font-weight: bold;
-        font-size: 20px;
-        margin-bottom: 20px;
-        letter-spacing: 1px;
+        font-size: 22px;
+        margin-bottom: 25px;
+        text-transform: uppercase;
+        border-bottom: 2px solid #0d47a1;
+        display: inline-block;
+        padding-bottom: 5px;
     }
 
-    /* Input Box Styles */
+    /* Input Box Styles - Font Colour Blue while typing */
     .stTextInput input {
-        border-radius: 8px !important;
+        border-radius: 10px !important;
         background-color: white !important;
         border: 1px solid #ccc !important;
-        padding-left: 35px !important;
+        color: #0d47a1 !important; /* Blue font colour while typing */
+        font-weight: 500 !important;
     }
 
-    /* Button Styling */
+    /* Label Styling with Icons */
+    label {
+        color: #333 !important;
+        font-weight: bold !important;
+    }
+
+    /* Login Button */
     .stButton>button {
         background: #0d47a1;
         color: white;
-        border-radius: 8px;
-        height: 45px;
+        border-radius: 10px;
+        height: 50px;
         font-weight: bold;
+        font-size: 18px;
         width: 100%;
         border: none;
+        margin-top: 20px;
     }
     
     .stButton>button:hover {
@@ -74,7 +87,7 @@ st.markdown("""
         color: white;
     }
 
-    /* Remove Streamlit branding */
+    /* Hide Streamlit Header/Footer */
     header, footer {visibility: hidden;}
     </style>
     """, unsafe_allow_html=True)
@@ -89,52 +102,62 @@ def get_gsheet_client():
 # --- 4. LOGIN LOGIC ---
 if not st.session_state.logged_in:
     # Company Name at Top Center
-    st.markdown('<div class="company-name">TAKECARE MANPOWER SERVICES</div>', unsafe_allow_html=True)
+    st.markdown('<div class="company-header">TAKECARE MANPOWER SERVICES</div>', unsafe_allow_html=True)
     
     # Login Box
     with st.container():
         st.markdown('<div class="login-container">', unsafe_allow_html=True)
+        
+        # ATS LOGIN Title inside the box
         st.markdown('<p class="ats-title">ATS LOGIN</p>', unsafe_allow_html=True)
         
-        # Email ID with Icon Label
-        u_mail = st.text_input("👤 EMAIL ID", placeholder="EMAIL ID", label_visibility="visible")
+        # Email ID field
+        u_mail = st.text_input("👤 EMAIL ID", placeholder="Enter Email ID")
         
-        # Password with Icon and Toggle
-        u_pass = st.text_input("🔒 PASSWORD", placeholder="PASSWORD", type="password", label_visibility="visible")
+        # Password field with toggle
+        u_pass = st.text_input("🔒 PASSWORD", placeholder="Enter Password", type="password")
         
-        # Remember Me and Forget Password
-        col_a, col_b = st.columns(2)
-        with col_a:
+        # Remember Me & Forget Password
+        col_1, col_2 = st.columns(2)
+        with col_1:
             remember = st.toggle("Remember Me")
-        with col_b:
-            st.markdown("<p style='font-size:12px; color:grey; margin-top:5px;'>Forgot Password?<br><b>Contact Admin</b></p>", unsafe_allow_html=True)
+        with col_2:
+            st.markdown("<p style='font-size:12px; color:grey; text-align:right;'>Forgot Password?<br><b style='color:#0d47a1;'>Contact Admin</b></p>", unsafe_allow_html=True)
         
         if st.button("LOGIN SUCCESSFUL"):
             try:
                 client = get_gsheet_client()
                 sh = client.open("ATS_Cloud_Database") 
-                users_df = pd.DataFrame(sh.worksheet("User_Master").get_all_records())
+                user_sheet = sh.worksheet("User_Master")
+                users_df = pd.DataFrame(user_sheet.get_all_records())
                 
-                user_match = users_df[(users_df['Mail_ID'] == u_mail) & (users_df['Password'].astype(str) == u_pass)]
+                # Validation Logic
+                user_row = users_df[(users_df['Mail_ID'] == u_mail) & (users_df['Password'].astype(str) == u_pass)]
                 
-                if not user_match.empty:
+                if not user_row.empty:
                     st.success("Login Successful!")
                     st.session_state.logged_in = True
-                    st.session_state.user_full_name = user_match.iloc[0]['Username']
+                    st.session_state.user_full_name = user_row.iloc[0]['Username']
                     st.rerun()
                 else:
                     st.error("Incorrect username or password")
-            except:
-                st.error("Database connection failed.")
+            except Exception as e:
+                st.error("Database Connection Error. Contact Admin.")
         
         st.markdown('</div>', unsafe_allow_html=True)
 
 else:
-    # --- DASHBOARD LOGIC (STAYS PERSISTENT) ---
-    st.sidebar.write(f"Logged in as: **{st.session_state.user_full_name}**")
-    if st.sidebar.button("Logout"):
+    # --- 5. DASHBOARD AREA (Stays Persistent) ---
+    st.sidebar.markdown(f"### 👤 Recruiter: {st.session_state.user_full_name}")
+    
+    menu = st.sidebar.radio("Navigation", ["Tracking Dashboard", "New Candidate Entry", "Logout"])
+    
+    if menu == "Logout":
         st.session_state.logged_in = False
         st.rerun()
 
-    st.header("🏆 Candidate Tracking Dashboard")
-    st.write("Welcome to the internal system.")
+    # Dashboard Content
+    if menu == "Tracking Dashboard":
+        st.header("📊 Candidate Tracking Dashboard")
+        st.write(f"Welcome back, {st.session_state.user_full_name}! Inga unga tracking table load aagum.")
+        # Unga pazhaya Dashboard logic code-ah inga add pannikonga.
