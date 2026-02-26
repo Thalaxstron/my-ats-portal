@@ -153,3 +153,73 @@ else:
                     st.markdown(f"[📲 Send WhatsApp to {c_name}](https://wa.me/91{c_phone}?text={urllib.parse.quote(wa_msg)})")
                 except Exception as e:
                     st.error(f"Error: {e}")
+                    else:
+    # --- SIDEBAR NAVIGATION ---
+    st.sidebar.title(f"👤 {st.session_state.user_full_name}")
+    menu = st.sidebar.radio("Main Menu", ["Dashboard & Tracking", "New Entry", "Logout"])
+
+    if menu == "Logout":
+        st.session_state.logged_in = False
+        st.rerun()
+
+    # --- MODULE 1: NEW ENTRY (Your existing code with small tweaks) ---
+    if menu == "New Entry":
+        st.header("📝 Candidate Shortlist Entry")
+        # ... (Keep your existing New Entry code here) ...
+        # (Ensure you include the 'Save & Generate WhatsApp' logic you wrote)
+
+    # --- MODULE 2: DASHBOARD & TRACKING (New Feature) ---
+    elif menu == "Dashboard & Tracking":
+        st.header("🔄 Candidate Pipeline")
+
+        # Load Candidate Data
+        raw_data = cand_sheet.get_all_records()
+        if not raw_data:
+            st.info("No candidates found in the database.")
+        else:
+            df = pd.DataFrame(raw_data)
+
+            # --- SEARCH & FILTER ---
+            col1, col2 = st.columns([2, 1])
+            with col1:
+                search = st.text_input("🔍 Search by Name or Mobile", "")
+            with col2:
+                status_filter = st.multiselect("Filter Status", df['Status'].unique(), default=df['Status'].unique())
+
+            # Apply Filters
+            filtered_df = df[df['Status'].isin(status_filter)]
+            if search:
+                filtered_df = filtered_df[
+                    filtered_df['Candidate Name'].str.contains(search, case=False) | 
+                    filtered_df['Contact Number'].astype(str).contains(search)
+                ]
+
+            # --- DISPLAY TABLE ---
+            st.dataframe(filtered_df, use_container_width=True, hide_index=True)
+
+            # --- UPDATE STATUS LOGIC ---
+            st.markdown("---")
+            st.subheader("Edit Candidate Status")
+            
+            with st.expander("Click here to update a candidate's progress"):
+                # Select candidate by Ref ID
+                ref_to_update = st.selectbox("Select Reference ID", ["-- Select --"] + filtered_df['Reference_ID'].tolist())
+                
+                if ref_to_update != "-- Select --":
+                    # Get current data for this candidate
+                    current_row = df[df['Reference_ID'] == ref_to_update].iloc[0]
+                    
+                    c1, c2, c3 = st.columns(3)
+                    with c1:
+                        new_status = st.selectbox("New Status", ["Shortlisted", "Interviewed", "Selected", "Rejected", "Onboarded", "Hold"], 
+                                                index=["Shortlisted", "Interviewed", "Selected", "Rejected", "Onboarded", "Hold"].index(current_row['Status']))
+                    with c2:
+                        # Find the row index in Google Sheets (Ref ID is in Col 1)
+                        # We add 2 because: 1 (header) + 1 (0-based index to 1-based)
+                        row_idx = df.index[df['Reference_ID'] == ref_to_update].tolist()[0] + 2
+                        
+                        if st.button("Update Record"):
+                            # Update only the Status column (Column 8 in your sheet)
+                            cand_sheet.update_cell(row_idx, 8, new_status)
+                            st.success(f"Updated {ref_to_update} to {new_status}!")
+                            st.rerun()
