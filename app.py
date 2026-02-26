@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 # --- 1. PAGE SETUP ---
 st.set_page_config(page_title="Takecare ATS Portal", layout="wide")
 
-# --- 2. PREMIUM CSS ---
+# --- 2. CUSTOM CSS (Gradient & Premium UI) ---
 st.markdown("""
     <style>
     .stApp {
@@ -23,7 +23,7 @@ st.markdown("""
         backdrop-filter: blur(10px); border: 1px solid rgba(255, 255, 255, 0.2);
         text-align: center; width: 100%; max-width: 400px; margin-top: 50px;
     }
-    .company-header { color: white; font-family: 'Arial Black', sans-serif; font-size: 28px; }
+    .company-header { color: white; font-family: 'Arial Black', sans-serif; font-size: 28px; margin-bottom: 5px; }
     .ats-title { color: white; font-weight: bold; font-size: 20px; margin-bottom: 25px; }
     .field-label { color: white !important; font-weight: bold; text-align: left; display: block; margin-top: 15px; font-size: 14px; }
     .stTextInput input { border-radius: 8px !important; background-color: white !important; color: #0d47a1 !important; font-weight: bold !important; height: 45px !important; }
@@ -47,28 +47,28 @@ try:
 except Exception as e:
     st.error(f"Database Connection Error: {e}"); st.stop()
 
-# --- 4. REFRESH PERSISTENCE (Dashboard persistence fix) ---
+# --- 4. SESSION & REFRESH PERSISTENCE ---
 if 'logged_in' not in st.session_state:
     st.session_state.logged_in = False
 if 'user_full_name' not in st.session_state:
     st.session_state.user_full_name = ""
 
-# --- 5. REF ID LOGIC ---
+# --- 5. REF ID GENERATOR ---
 def get_next_ref_id():
     all_ids = cand_sheet.col_values(1)
     if len(all_ids) <= 1: return "E00001"
     valid_ids = [int(val[1:]) for val in all_ids[1:] if str(val).startswith("E") and str(val)[1:].isdigit()]
     return f"E{max(valid_ids)+1:05d}" if valid_ids else "E00001"
 
-# --- 6. MAIN APP FLOW ---
+# --- 6. LOGIN LOGIC ---
 if not st.session_state.logged_in:
     _, col_m, _ = st.columns([1, 1.5, 1])
     with col_m:
         st.markdown('<div class="login-card">', unsafe_allow_html=True)
         st.markdown('<div class="company-header">TAKECARE MANPOWER</div>', unsafe_allow_html=True)
         st.markdown('<div class="ats-title">ATS LOGIN</div>', unsafe_allow_html=True)
-        u_mail = st.text_input("Email ID", key="l_mail")
-        u_pass = st.text_input("Password", type="password", key="l_pass")
+        u_mail = st.text_input("EMAIL ID", placeholder="Enter Email", key="login_email")
+        u_pass = st.text_input("PASSWORD", placeholder="Enter Password", type="password", key="login_pass")
         remember = st.checkbox("Remember Me")
         if st.button("ACCESS DASHBOARD", use_container_width=True):
             users_df = pd.DataFrame(user_sheet.get_all_records())
@@ -81,18 +81,22 @@ if not st.session_state.logged_in:
         st.markdown('</div>', unsafe_allow_html=True)
 
 else:
+    # --- LOGGED IN: SIDEBAR ---
     st.sidebar.markdown(f"### 👤 {st.session_state.user_full_name}")
-    menu = st.sidebar.selectbox("Menu", ["Dashboard & Tracking", "New Shortlist Entry", "Logout"])
+    menu = st.sidebar.selectbox("Menu Navigation", ["Dashboard & Tracking", "Logout"])
+    
     if menu == "Logout":
         st.session_state.logged_in = False; st.rerun()
 
-    # --- MODULE: NEW SHORTLIST ENTRY ---
-    if menu == "New Shortlist Entry":
-        st.header("📝 New Candidate Entry")
+    # --- MAIN MODULE: DASHBOARD & TRACKING ---
+    st.header("🔄 Candidate Tracking System")
+    
+    # 1. NEW ENTRY FORM (Always visible or on top)
+    with st.expander("➕ ADD NEW CANDIDATE SHORTLIST", expanded=False):
         clients_df = pd.DataFrame(client_sheet.get_all_records())
         client_options = ["-- Select --"] + sorted(clients_df['Client Name'].unique().tolist())
         
-        with st.container(border=True):
+        with st.form("new_entry_form", clear_on_submit=True):
             c1, c2 = st.columns(2)
             with c1:
                 name = st.text_input("Candidate Name")
@@ -107,18 +111,21 @@ else:
                     mlink = rows.iloc[0].get('Map Link') or rows.iloc[0].get('Google Map Link') or 'No Link'
                     cperson = rows.iloc[0].get('Contact Person', 'HR')
                 else:
-                    job = st.selectbox("Position", ["Select Client First"])
-                    addr, mlink, cperson = "", "", ""
-                comm_date = st.date_input("Commitment Date", datetime.now())
-
-            if st.button("Save & Generate WhatsApp", use_container_width=True):
+                    job, addr, mlink, cperson = "Select Client", "", "", ""
+                comm_date = st.date_input("Commitment/Interview Date", datetime.now())
+            
+            submit_btn = st.form_submit_button("SAVE & GENERATE INVITE", use_container_width=True)
+            
+            if submit_btn:
                 if name and phone and sel_client != "-- Select --":
                     ref = get_next_ref_id()
                     today = datetime.now().strftime("%d-%m-%Y")
                     c_date = comm_date.strftime("%d-%m-%Y")
+                    
+                    # Save to Sheet
                     cand_sheet.append_row([ref, today, name, phone, sel_client, job, c_date, "Shortlisted", st.session_state.user_full_name, "", "", ""])
                     
-                    # WhatsApp Message Logic
+                    # WhatsApp Invite Formatting
                     msg = (f"Dear *{name}*,\n\nCongratulations! Upon reviewing your application, we would like to invite you for Direct interview and get to know you better.\n\n"
                            f"Please write your resume:\nReference: Takecare Manpower Services Pvt Ltd\n\n"
                            f"Position: {job}\nDate: {c_date}\nInterview Time: 10:30 am\n\n"
@@ -128,74 +135,84 @@ else:
                            f"Regards\n*{st.session_state.user_full_name}*\nTakecare HR Team")
                     
                     wa_link = f"https://wa.me/91{phone}?text={urllib.parse.quote(msg)}"
-                    st.success(f"Candidate {name} Shortlisted!")
-                    # Syntax fix: Button code-ah single line-la pottachu
+                    st.success(f"Candidate {name} Saved! Ref: {ref}")
                     st.markdown(f'<a href="{wa_link}" target="_blank"><button style="width:100%; background-color:#25D366; color:white; border:none; padding:12px; border-radius:8px; font-weight:bold; cursor:pointer;">📲 SEND WHATSAPP INVITE</button></a>', unsafe_allow_html=True)
-                else: st.warning("Fill all details")
+                else: st.warning("Please fill all details.")
 
-    # --- MODULE: DASHBOARD & TRACKING (Full Logic) ---
-    elif menu == "Dashboard & Tracking":
-        st.header("🔄 Candidate Tracking System")
-        raw_data = cand_sheet.get_all_records()
-        if not raw_data:
-            st.info("No candidates found.")
-        else:
-            all_df = pd.DataFrame(raw_data)
-            f1, f2, f3 = st.columns(3)
-            with f1: search_q = st.text_input("🔍 Search Name/Mobile")
-            with f2: client_filter = st.selectbox("Filter by Client", ["All"] + sorted(all_df['Client Name'].unique().tolist()))
-            with f3: hr_filter = st.selectbox("Filter by Recruiter", ["All"] + sorted(all_df['HR Name'].unique().tolist()))
+    st.markdown("---")
 
-            filtered_df = all_df.copy()
-            if search_q:
-                filtered_df = filtered_df[filtered_df['Candidate Name'].str.contains(search_q, case=False) | filtered_df['Contact Number'].astype(str).contains(search_q)]
-            if client_filter != "All": filtered_df = filtered_df[filtered_df['Client Name'] == client_filter]
-            if hr_filter != "All": filtered_df = filtered_df[filtered_df['HR Name'] == hr_filter]
+    # 2. TRACKING TABLE
+    raw_data = cand_sheet.get_all_records()
+    if not raw_data:
+        st.info("No records found in Database.")
+    else:
+        all_df = pd.DataFrame(raw_data)
+        
+        # Filters
+        f1, f2, f3 = st.columns(3)
+        with f1: search_q = st.text_input("🔍 Search Name/Mobile", key="search_bar")
+        with f2: client_filter = st.selectbox("Filter by Client", ["All"] + sorted(all_df['Client Name'].unique().tolist()))
+        with f3: hr_filter = st.selectbox("Filter by Recruiter", ["All"] + sorted(all_df['HR Name'].unique().tolist()))
 
-            st.markdown("---")
-            h1, h2, h3, h4, h5, h6, h7 = st.columns([1, 2, 1.5, 1.5, 1.5, 1.5, 1])
-            h1.write("**Ref ID**"); h2.write("**Candidate Name**"); h3.write("**Client**"); h4.write("**Comm. Date**"); h5.write("**Status**"); h6.write("**HR Name**"); h7.write("**Action**")
+        filtered_df = all_df.copy()
+        if search_q:
+            filtered_df = filtered_df[filtered_df['Candidate Name'].str.contains(search_q, case=False) | filtered_df['Contact Number'].astype(str).contains(search_q)]
+        if client_filter != "All": filtered_df = filtered_df[filtered_df['Client Name'] == client_filter]
+        if hr_filter != "All": filtered_df = filtered_df[filtered_df['HR Name'] == hr_filter]
 
-            for idx, row in filtered_df.iterrows():
-                r1, r2, r3, r4, r5, r6, r7 = st.columns([1, 2, 1.5, 1.5, 1.5, 1.5, 1])
-                r1.write(row['Reference_ID']); r2.write(row['Candidate Name']); r3.write(row['Client Name']); r4.write(row['Interview Date'])
-                status_color = {"Shortlisted": "🔵", "Selected": "🟢", "Rejected": "🔴", "Onboarded": "🟣"}.get(row['Status'], "⚪")
-                r5.write(f"{status_color} {row['Status']}"); r6.write(row['HR Name'])
-                if r7.button("📝", key=f"edit_{idx}"):
-                    st.session_state.edit_id = row['Reference_ID']
-                    st.rerun()
+        # Table Header
+        h1, h2, h3, h4, h5, h6, h7 = st.columns([1, 2, 1.5, 1.5, 1.5, 1.5, 1])
+        h1.write("**Ref ID**"); h2.write("**Candidate Name**"); h3.write("**Client**"); h4.write("**Comm. Date**"); h5.write("**Status**"); h6.write("**HR Name**"); h7.write("**Action**")
 
-            # --- SIDEBAR EDIT MODAL (Logic Persistence) ---
-            if 'edit_id' in st.session_state:
-                with st.sidebar:
-                    st.markdown("---")
-                    st.subheader(f"Updating: {st.session_state.edit_id}")
-                    e_row = all_df[all_df['Reference_ID'] == st.session_state.edit_id].iloc[0]
-                    up_status = st.selectbox("Change Status", ["Shortlisted", "Interviewed", "Selected", "Hold", "Rejected", "Onboarded", "Not Joined", "Left", "Working"], index=["Shortlisted", "Interviewed", "Selected", "Hold", "Rejected", "Onboarded", "Not Joined", "Left", "Working"].index(e_row['Status']))
-                    up_feedback = st.text_area("Feedback", value=str(e_row['Feedback']))
-                    
-                    up_int_date = e_row['Interview Date']
-                    up_join_date = e_row['Joining Date']
-                    up_sr_date = e_row['SR Date']
+        for idx, row in filtered_df.iterrows():
+            r1, r2, r3, r4, r5, r6, r7 = st.columns([1, 2, 1.5, 1.5, 1.5, 1.5, 1])
+            r1.write(row['Reference_ID']); r2.write(row['Candidate Name']); r3.write(row['Client Name']); r4.write(row['Interview Date'])
+            status_color = {"Shortlisted": "🔵", "Selected": "🟢", "Rejected": "🔴", "Onboarded": "🟣"}.get(row['Status'], "⚪")
+            r5.write(f"{status_color} {row['Status']}"); r6.write(row['HR Name'])
+            
+            if r7.button("📝", key=f"edit_btn_{idx}"):
+                st.session_state.edit_id = row['Reference_ID']
+                st.rerun()
 
-                    if up_status == "Interviewed": up_int_date = st.date_input("Actual Interview Date").strftime("%d-%m-%Y")
-                    if up_status == "Onboarded":
-                        j_date = st.date_input("Final Joining Date")
-                        up_join_date = j_date.strftime("%d-%m-%Y")
-                        c_master = pd.DataFrame(client_sheet.get_all_records())
-                        c_row = c_master[c_master['Client Name'] == e_row['Client Name']]
-                        days = int(c_row.iloc[0]['SR Days']) if not c_row.empty else 0
-                        up_sr_date = (j_date + timedelta(days=days)).strftime("%d-%m-%Y")
+        # 3. EDIT SIDEBAR (FULL LOGIC)
+        if 'edit_id' in st.session_state:
+            with st.sidebar:
+                st.markdown("---")
+                st.subheader(f"Updating: {st.session_state.edit_id}")
+                e_row = all_df[all_df['Reference_ID'] == st.session_state.edit_id].iloc[0]
+                
+                up_status = st.selectbox("Status", ["Shortlisted", "Interviewed", "Selected", "Hold", "Rejected", "Onboarded", "Not Joined", "Left", "Working"], 
+                                         index=["Shortlisted", "Interviewed", "Selected", "Hold", "Rejected", "Onboarded", "Not Joined", "Left", "Working"].index(e_row['Status']))
+                up_feedback = st.text_area("Feedback", value=str(e_row['Feedback']))
+                
+                # Logic for Dates
+                up_int_date = e_row['Interview Date']
+                up_join_date = e_row['Joining Date']
+                up_sr_date = e_row['SR Date']
 
-                    if st.button("Save Changes"):
-                        all_ids = cand_sheet.col_values(1)
-                        try:
-                            sheet_row_idx = all_ids.index(st.session_state.edit_id) + 1
-                            cand_sheet.update_cell(sheet_row_idx, 7, up_int_date)
-                            cand_sheet.update_cell(sheet_row_idx, 8, up_status)
-                            cand_sheet.update_cell(sheet_row_idx, 10, up_join_date)
-                            cand_sheet.update_cell(sheet_row_idx, 11, up_sr_date)
-                            cand_sheet.update_cell(sheet_row_idx, 12, up_feedback)
-                            st.success("Updated!"); del st.session_state.edit_id; st.rerun()
-                        except: st.error("Row Not Found")
-                    if st.button("Cancel"): del st.session_state.edit_id; st.rerun()
+                if up_status == "Interviewed":
+                    up_int_date = st.date_input("Actual Interview Date").strftime("%d-%m-%Y")
+                
+                if up_status == "Onboarded":
+                    j_date = st.date_input("Final Joining Date")
+                    up_join_date = j_date.strftime("%d-%m-%Y")
+                    # SR Calculation from Client Master
+                    c_master = pd.DataFrame(client_sheet.get_all_records())
+                    c_row = c_master[c_master['Client Name'] == e_row['Client Name']]
+                    days = int(c_row.iloc[0]['SR Days']) if not c_row.empty else 0
+                    up_sr_date = (j_date + timedelta(days=days)).strftime("%d-%m-%Y")
+
+                if st.button("SAVE UPDATES"):
+                    all_ids = cand_sheet.col_values(1)
+                    try:
+                        sheet_row_idx = all_ids.index(st.session_state.edit_id) + 1
+                        cand_sheet.update_cell(sheet_row_idx, 7, up_int_date)
+                        cand_sheet.update_cell(sheet_row_idx, 8, up_status)
+                        cand_sheet.update_cell(sheet_row_idx, 10, up_join_date)
+                        cand_sheet.update_cell(sheet_row_idx, 11, up_sr_date)
+                        cand_sheet.update_cell(sheet_row_idx, 12, up_feedback)
+                        st.success("Successfully Updated!"); del st.session_state.edit_id; st.rerun()
+                    except: st.error("Database Row Error")
+                
+                if st.button("CANCEL EDIT"):
+                    del st.session_state.edit_id; st.rerun()
