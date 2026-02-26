@@ -153,7 +153,6 @@ else:
                     st.markdown(f"[📲 Send WhatsApp to {c_name}](https://wa.me/91{c_phone}?text={urllib.parse.quote(wa_msg)})")
                 except Exception as e:
                     st.error(f"Error: {e}")
-                    else:
     # --- SIDEBAR NAVIGATION ---
     st.sidebar.title(f"👤 {st.session_state.user_full_name}")
     menu = st.sidebar.radio("Main Menu", ["Dashboard & Tracking", "New Entry", "Logout"])
