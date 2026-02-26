@@ -5,12 +5,13 @@ from google.oauth2.service_account import Credentials
 import urllib.parse
 from datetime import datetime
 
-# --- PAGE SETUP ---
-st.set_page_config(page_title="Takecare Manpower Services", layout="wide")
+# --- 1. PAGE SETUP ---
+st.set_page_config(page_title="Takecare Manpower ATS", layout="wide")
 
-# --- DATABASE CONNECTION ---
+# --- 2. DATABASE CONNECTION ---
 def get_gsheet_client():
     scope = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
+    # Ensure st.secrets has "gcp_service_account"
     creds = Credentials.from_service_account_info(st.secrets["gcp_service_account"], scopes=scope)
     return authorize(creds)
 
@@ -24,13 +25,12 @@ except Exception as e:
     st.error(f"Database Connection Error: {e}")
     st.stop()
 
-# --- FIXED REFERENCE ID LOGIC ---
+# --- 3. HELPER FUNCTIONS ---
 def get_next_ref_id():
     all_ids = cand_sheet.col_values(1) # Reference_ID column
     if len(all_ids) <= 1:
         return "E00001"
     
-    # Filter only E-prefixed IDs and find the max
     valid_ids = []
     for val in all_ids[1:]:
         if str(val).startswith("E"):
@@ -45,180 +45,103 @@ def get_next_ref_id():
     next_num = max(valid_ids) + 1
     return f"E{next_num:05d}"
 
+# --- 4. AUTHENTICATION LOGIC ---
 if 'logged_in' not in st.session_state:
     st.session_state.logged_in = False
 
 if not st.session_state.logged_in:
     st.markdown("<h1 style='text-align: center; color: #004aad;'>Takecare ATS Portal</h1>", unsafe_allow_html=True)
-    col1, col2, col3 = st.columns([1,2,1])
+    col1, col2, col3 = st.columns([1,1.5,1])
     with col2:
-        u_mail = st.text_input("Email ID")
-        u_pass = st.text_input("Password", type="password")
-        if st.button("Login"):
-            users_df = pd.DataFrame(user_sheet.get_all_records())
-            user_row = users_df[(users_df['Mail_ID'] == u_mail) & (users_df['Password'].astype(str) == u_pass)]
-            if user_row.empty == False:
-                st.session_state.logged_in = True
-                st.session_state.user_full_name = user_row.iloc[0]['Username']
-                st.rerun()
-            else:
-                st.error("Invalid Login Details")
+        with st.container(border=True):
+            u_mail = st.text_input("Email ID")
+            u_pass = st.text_input("Password", type="password")
+            if st.button("Login", use_container_width=True):
+                users_df = pd.DataFrame(user_sheet.get_all_records())
+                user_row = users_df[(users_df['Mail_ID'] == u_mail) & (users_df['Password'].astype(str) == u_pass)]
+                if not user_row.empty:
+                    st.session_state.logged_in = True
+                    st.session_state.user_full_name = user_row.iloc[0]['Username']
+                    st.rerun()
+                else:
+                    st.error("Invalid Login Details")
+
+# --- 5. MAIN APPLICATION (LOGGED IN) ---
 else:
-    st.sidebar.title(f"HR: {st.session_state.user_full_name}")
-    menu = st.sidebar.radio("Menu", ["New Entry", "Logout"])
+    # Sidebar Navigation
+    st.sidebar.title(f"👤 HR: {st.session_state.user_full_name}")
+    menu = st.sidebar.radio("Main Menu", ["New Entry", "Dashboard & Tracking", "Logout"])
 
     if menu == "Logout":
         st.session_state.logged_in = False
         st.rerun()
 
+    # --- MODULE: NEW ENTRY ---
     if menu == "New Entry":
         st.header("📝 Candidate Shortlist Entry")
         
-        # Data loading with column name cleaning
+        # Load Client Master Data
         clients_df = pd.DataFrame(client_sheet.get_all_records())
-        clients_df.columns = [c.strip() for c in clients_df.columns] # Remove hidden spaces
-        
+        clients_df.columns = [c.strip() for c in clients_df.columns]
         client_options = ["-- Select Client --"] + sorted(clients_df['Client Name'].unique().tolist())
         
-        c1, c2 = st.columns(2)
-        with c1:
-            c_name = st.text_input("Candidate Name")
-            c_phone = st.text_input("Contact Number")
-            selected_client = st.selectbox("Client Name", client_options)
-        
-        with c2:
-            if selected_client != "-- Select Client --":
-                client_rows = clients_df[clients_df['Client Name'] == selected_client]
-                all_pos = []
-                for idx, row in client_rows.iterrows():
-                    all_pos.extend([p.strip() for p in str(row['Position']).split(',')])
-                
-                job_title = st.selectbox("Select Position", sorted(list(set(all_pos))))
-                
-                # Fetching details with Case Insensitive column check
-                client_info = client_rows.iloc[0]
-                db_address = client_info.get('Address', 'Check with HR')
-                
-                # Dynamic Map Link Search
-                db_map = "No Link"
-                for col in ['Map Link', 'Google Map Link', 'Map']:
-                    if col in client_info and str(client_info[col]).strip() != "":
-                        db_map = str(client_info[col]).strip()
-                        break
-                
-                db_contact_person = client_info.get('Contact Person', 'HR Manager')
-            else:
-                job_title = st.selectbox("Select Position", ["Please select client"])
-                db_address, db_map, db_contact_person = "", "", ""
+        with st.container(border=True):
+            c1, c2 = st.columns(2)
+            with c1:
+                c_name = st.text_input("Candidate Name")
+                c_phone = st.text_input("Contact Number (10 digits)")
+                selected_client = st.selectbox("Client Name", client_options)
             
-            comm_date = st.date_input("Commitment Date", datetime.now())
-
-        if st.button("Save & Generate WhatsApp"):
-            if selected_client == "-- Select Client --" or not c_name or not c_phone:
-                st.warning("All fields are mandatory!")
-            else:
-                try:
-                    ref_id = get_next_ref_id()
-                    today = datetime.now().strftime("%d-%m-%Y")
-                    c_date_str = comm_date.strftime("%d-%m-%Y")
+            with c2:
+                if selected_client != "-- Select Client --":
+                    client_rows = clients_df[clients_df['Client Name'] == selected_client]
+                    all_pos = []
+                    for _, row in client_rows.iterrows():
+                        all_pos.extend([p.strip() for p in str(row['Position']).split(',')])
                     
-                    new_data = [
-                        ref_id, today, c_name, c_phone, selected_client, 
-                        job_title, c_date_str, "Shortlisted", 
-                        st.session_state.user_full_name, "", "", ""
-                    ]
-                    cand_sheet.append_row(new_data)
+                    job_title = st.selectbox("Select Position", sorted(list(set(all_pos))))
+                    client_info = client_rows.iloc[0]
+                    db_address = client_info.get('Address', 'Check with HR')
                     
-                    wa_msg = (
-                        f"Dear *{c_name}*,\n\n"
-                        f"Congratulations, Upon reviewing your application, we would like to invite you for Direct interview and get to know you better.\n\n"
-                        f"Please write your resume:\n"
-                        f"*Reference:* Takecare Manpower Services Pvt Ltd\n\n"
-                        f"*Position:* {job_title}\n"
-                        f"*Date:* {c_date_str}\n"
-                        f"*Interview Time:* 10:30 am\n\n"
-                        f"*Interview venue:*\n"
-                        f"*{selected_client}*,\n"
-                        f"{db_address}\n\n"
-                        f"*Map Location:* {db_map}\n"
-                        f"*Contact Person:* {db_contact_person}\n\n"
-                        f"Please Let me know when you arrive at the interview location.\n"
-                        f"All the best....\n\n"
-                        f"Regards\n"
-                        f"*{st.session_state.user_full_name}*\n"
-                        f"Takecare HR Team"
-                    )
-                    
-                    st.success(f"✅ Success! Reference ID: {ref_id}")
-                    st.markdown(f"[📲 Send WhatsApp to {c_name}](https://wa.me/91{c_phone}?text={urllib.parse.quote(wa_msg)})")
-                except Exception as e:
-                    st.error(f"Error: {e}")
-    # --- SIDEBAR NAVIGATION ---
-    st.sidebar.title(f"👤 {st.session_state.user_full_name}")
-    menu = st.sidebar.radio("Main Menu", ["Dashboard & Tracking", "New Entry", "Logout"])
-
-    if menu == "Logout":
-        st.session_state.logged_in = False
-        st.rerun()
-
-    # --- MODULE 1: NEW ENTRY (Your existing code with small tweaks) ---
-    if menu == "New Entry":
-        st.header("📝 Candidate Shortlist Entry")
-        # ... (Keep your existing New Entry code here) ...
-        # (Ensure you include the 'Save & Generate WhatsApp' logic you wrote)
-
-    # --- MODULE 2: DASHBOARD & TRACKING (New Feature) ---
-    elif menu == "Dashboard & Tracking":
-        st.header("🔄 Candidate Pipeline")
-
-        # Load Candidate Data
-        raw_data = cand_sheet.get_all_records()
-        if not raw_data:
-            st.info("No candidates found in the database.")
-        else:
-            df = pd.DataFrame(raw_data)
-
-            # --- SEARCH & FILTER ---
-            col1, col2 = st.columns([2, 1])
-            with col1:
-                search = st.text_input("🔍 Search by Name or Mobile", "")
-            with col2:
-                status_filter = st.multiselect("Filter Status", df['Status'].unique(), default=df['Status'].unique())
-
-            # Apply Filters
-            filtered_df = df[df['Status'].isin(status_filter)]
-            if search:
-                filtered_df = filtered_df[
-                    filtered_df['Candidate Name'].str.contains(search, case=False) | 
-                    filtered_df['Contact Number'].astype(str).contains(search)
-                ]
-
-            # --- DISPLAY TABLE ---
-            st.dataframe(filtered_df, use_container_width=True, hide_index=True)
-
-            # --- UPDATE STATUS LOGIC ---
-            st.markdown("---")
-            st.subheader("Edit Candidate Status")
-            
-            with st.expander("Click here to update a candidate's progress"):
-                # Select candidate by Ref ID
-                ref_to_update = st.selectbox("Select Reference ID", ["-- Select --"] + filtered_df['Reference_ID'].tolist())
+                    # Map Link logic
+                    db_map = "No Link"
+                    for col in ['Map Link', 'Google Map Link', 'Map']:
+                        if col in client_info and str(client_info[col]).strip() != "":
+                            db_map = str(client_info[col]).strip()
+                            break
+                    db_contact_person = client_info.get('Contact Person', 'HR Manager')
+                else:
+                    job_title = st.selectbox("Select Position", ["Please select client"])
+                    db_address, db_map, db_contact_person = "", "", ""
                 
-                if ref_to_update != "-- Select --":
-                    # Get current data for this candidate
-                    current_row = df[df['Reference_ID'] == ref_to_update].iloc[0]
-                    
-                    c1, c2, c3 = st.columns(3)
-                    with c1:
-                        new_status = st.selectbox("New Status", ["Shortlisted", "Interviewed", "Selected", "Rejected", "Onboarded", "Hold"], 
-                                                index=["Shortlisted", "Interviewed", "Selected", "Rejected", "Onboarded", "Hold"].index(current_row['Status']))
-                    with c2:
-                        # Find the row index in Google Sheets (Ref ID is in Col 1)
-                        # We add 2 because: 1 (header) + 1 (0-based index to 1-based)
-                        row_idx = df.index[df['Reference_ID'] == ref_to_update].tolist()[0] + 2
+                comm_date = st.date_input("Commitment Date", datetime.now())
+
+            if st.button("Save & Generate WhatsApp", use_container_width=True):
+                if selected_client == "-- Select Client --" or not c_name or not c_phone:
+                    st.warning("Please fill all fields!")
+                else:
+                    try:
+                        ref_id = get_next_ref_id()
+                        today = datetime.now().strftime("%d-%m-%Y")
+                        c_date_str = comm_date.strftime("%d-%m-%Y")
                         
-                        if st.button("Update Record"):
-                            # Update only the Status column (Column 8 in your sheet)
-                            cand_sheet.update_cell(row_idx, 8, new_status)
-                            st.success(f"Updated {ref_to_update} to {new_status}!")
-                            st.rerun()
+                        # Data order matching your Google Sheet columns
+                        new_data = [
+                            ref_id, today, c_name, c_phone, selected_client, 
+                            job_title, c_date_str, "Shortlisted", 
+                            st.session_state.user_full_name, "", "", ""
+                        ]
+                        cand_sheet.append_row(new_data)
+                        
+                        # WhatsApp Message Template
+                        wa_msg = (
+                            f"Dear *{c_name}*,\n\n"
+                            f"Congratulations! You are shortlisted for the interview.\n\n"
+                            f"*Position:* {job_title}\n"
+                            f"*Date:* {c_date_str}\n"
+                            f"*Client:* {selected_client}\n"
+                            f"*Venue:* {db_address}\n"
+                            f"*Map:* {db_map}\n"
+                            f"*Contact Person:* {db_contact_person}\n\n"
+                            f"Regards,\n{st.session_state.user_full_name}\nTakecare Team"
+                        )
