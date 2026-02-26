@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 # --- 1. PAGE SETUP ---
 st.set_page_config(page_title="Takecare ATS Portal", layout="wide")
 
-# --- 2. PREMIUM CSS (Gradient + Professional Look) ---
+# --- 2. PREMIUM CSS ---
 st.markdown("""
     <style>
     .stApp {
@@ -25,7 +25,9 @@ st.markdown("""
     }
     .company-header { color: white; font-family: 'Arial Black', sans-serif; font-size: 28px; }
     .ats-title { color: white; font-weight: bold; font-size: 20px; margin-bottom: 25px; }
-    .stTextInput input { border-radius: 8px !important; }
+    .field-label { color: white !important; font-weight: bold; text-align: left; display: block; margin-top: 15px; font-size: 14px; }
+    .stTextInput input { border-radius: 8px !important; background-color: white !important; color: #0d47a1 !important; font-weight: bold !important; height: 45px !important; }
+    .stCheckbox label { color: white !important; font-weight: bold; }
     header, footer {visibility: hidden;}
     </style>
     """, unsafe_allow_html=True)
@@ -45,7 +47,7 @@ try:
 except Exception as e:
     st.error(f"Database Connection Error: {e}"); st.stop()
 
-# --- 4. REFRESH & SESSION LOGIC ---
+# --- 4. REFRESH PERSISTENCE (Dashboard persistence fix) ---
 if 'logged_in' not in st.session_state:
     st.session_state.logged_in = False
 if 'user_full_name' not in st.session_state:
@@ -58,16 +60,15 @@ def get_next_ref_id():
     valid_ids = [int(val[1:]) for val in all_ids[1:] if str(val).startswith("E") and str(val)[1:].isdigit()]
     return f"E{max(valid_ids)+1:05d}" if valid_ids else "E00001"
 
-# --- 6. MAIN APP ---
+# --- 6. MAIN APP FLOW ---
 if not st.session_state.logged_in:
-    # --- LOGIN PAGE ---
     _, col_m, _ = st.columns([1, 1.5, 1])
     with col_m:
         st.markdown('<div class="login-card">', unsafe_allow_html=True)
         st.markdown('<div class="company-header">TAKECARE MANPOWER</div>', unsafe_allow_html=True)
         st.markdown('<div class="ats-title">ATS LOGIN</div>', unsafe_allow_html=True)
-        u_mail = st.text_input("Email ID", key="user_email")
-        u_pass = st.text_input("Password", type="password", key="user_pass")
+        u_mail = st.text_input("Email ID", key="l_mail")
+        u_pass = st.text_input("Password", type="password", key="l_pass")
         remember = st.checkbox("Remember Me")
         if st.button("ACCESS DASHBOARD", use_container_width=True):
             users_df = pd.DataFrame(user_sheet.get_all_records())
@@ -80,16 +81,14 @@ if not st.session_state.logged_in:
         st.markdown('</div>', unsafe_allow_html=True)
 
 else:
-    # --- DASHBOARD AREA ---
     st.sidebar.markdown(f"### 👤 {st.session_state.user_full_name}")
     menu = st.sidebar.selectbox("Menu", ["Dashboard & Tracking", "New Shortlist Entry", "Logout"])
-
     if menu == "Logout":
         st.session_state.logged_in = False; st.rerun()
 
     # --- MODULE: NEW SHORTLIST ENTRY ---
     if menu == "New Shortlist Entry":
-        st.header("📝 Candidate Shortlist Entry")
+        st.header("📝 New Candidate Entry")
         clients_df = pd.DataFrame(client_sheet.get_all_records())
         client_options = ["-- Select --"] + sorted(clients_df['Client Name'].unique().tolist())
         
@@ -109,26 +108,94 @@ else:
                     cperson = rows.iloc[0].get('Contact Person', 'HR')
                 else:
                     job = st.selectbox("Position", ["Select Client First"])
+                    addr, mlink, cperson = "", "", ""
                 comm_date = st.date_input("Commitment Date", datetime.now())
 
-            if st.button("Save & Generate WhatsApp Invite", use_container_width=True):
+            if st.button("Save & Generate WhatsApp", use_container_width=True):
                 if name and phone and sel_client != "-- Select --":
                     ref = get_next_ref_id()
                     today = datetime.now().strftime("%d-%m-%Y")
                     c_date = comm_date.strftime("%d-%m-%Y")
-                    
-                    # Save to Sheet
                     cand_sheet.append_row([ref, today, name, phone, sel_client, job, c_date, "Shortlisted", st.session_state.user_full_name, "", "", ""])
                     
-                    # WhatsApp Logic
+                    # WhatsApp Message Logic
                     msg = (f"Dear *{name}*,\n\nCongratulations! Upon reviewing your application, we would like to invite you for Direct interview and get to know you better.\n\n"
                            f"Please write your resume:\nReference: Takecare Manpower Services Pvt Ltd\n\n"
                            f"Position: {job}\nDate: {c_date}\nInterview Time: 10:30 am\n\n"
-                           f"Interview venue:\n*{sel_client}*,\n{addr}\n"
+                           f"Interview venue:\n*{sel_client}*,\n{addr}\n\n"
                            f"Map Location: {mlink}\nContact Person: {cperson}\n\n"
                            f"Please Let me know when you arrive at the interview location. All the best....\n\n"
                            f"Regards\n*{st.session_state.user_full_name}*\nTakecare HR Team")
                     
                     wa_link = f"https://wa.me/91{phone}?text={urllib.parse.quote(msg)}"
                     st.success(f"Candidate {name} Shortlisted!")
-                    st.markdown(f'<a href="{wa_link}" target="_blank"><button style="width:100%; background-color:#25D366; color:
+                    # Syntax fix: Button code-ah single line-la pottachu
+                    st.markdown(f'<a href="{wa_link}" target="_blank"><button style="width:100%; background-color:#25D366; color:white; border:none; padding:12px; border-radius:8px; font-weight:bold; cursor:pointer;">📲 SEND WHATSAPP INVITE</button></a>', unsafe_allow_html=True)
+                else: st.warning("Fill all details")
+
+    # --- MODULE: DASHBOARD & TRACKING (Full Logic) ---
+    elif menu == "Dashboard & Tracking":
+        st.header("🔄 Candidate Tracking System")
+        raw_data = cand_sheet.get_all_records()
+        if not raw_data:
+            st.info("No candidates found.")
+        else:
+            all_df = pd.DataFrame(raw_data)
+            f1, f2, f3 = st.columns(3)
+            with f1: search_q = st.text_input("🔍 Search Name/Mobile")
+            with f2: client_filter = st.selectbox("Filter by Client", ["All"] + sorted(all_df['Client Name'].unique().tolist()))
+            with f3: hr_filter = st.selectbox("Filter by Recruiter", ["All"] + sorted(all_df['HR Name'].unique().tolist()))
+
+            filtered_df = all_df.copy()
+            if search_q:
+                filtered_df = filtered_df[filtered_df['Candidate Name'].str.contains(search_q, case=False) | filtered_df['Contact Number'].astype(str).contains(search_q)]
+            if client_filter != "All": filtered_df = filtered_df[filtered_df['Client Name'] == client_filter]
+            if hr_filter != "All": filtered_df = filtered_df[filtered_df['HR Name'] == hr_filter]
+
+            st.markdown("---")
+            h1, h2, h3, h4, h5, h6, h7 = st.columns([1, 2, 1.5, 1.5, 1.5, 1.5, 1])
+            h1.write("**Ref ID**"); h2.write("**Candidate Name**"); h3.write("**Client**"); h4.write("**Comm. Date**"); h5.write("**Status**"); h6.write("**HR Name**"); h7.write("**Action**")
+
+            for idx, row in filtered_df.iterrows():
+                r1, r2, r3, r4, r5, r6, r7 = st.columns([1, 2, 1.5, 1.5, 1.5, 1.5, 1])
+                r1.write(row['Reference_ID']); r2.write(row['Candidate Name']); r3.write(row['Client Name']); r4.write(row['Interview Date'])
+                status_color = {"Shortlisted": "🔵", "Selected": "🟢", "Rejected": "🔴", "Onboarded": "🟣"}.get(row['Status'], "⚪")
+                r5.write(f"{status_color} {row['Status']}"); r6.write(row['HR Name'])
+                if r7.button("📝", key=f"edit_{idx}"):
+                    st.session_state.edit_id = row['Reference_ID']
+                    st.rerun()
+
+            # --- SIDEBAR EDIT MODAL (Logic Persistence) ---
+            if 'edit_id' in st.session_state:
+                with st.sidebar:
+                    st.markdown("---")
+                    st.subheader(f"Updating: {st.session_state.edit_id}")
+                    e_row = all_df[all_df['Reference_ID'] == st.session_state.edit_id].iloc[0]
+                    up_status = st.selectbox("Change Status", ["Shortlisted", "Interviewed", "Selected", "Hold", "Rejected", "Onboarded", "Not Joined", "Left", "Working"], index=["Shortlisted", "Interviewed", "Selected", "Hold", "Rejected", "Onboarded", "Not Joined", "Left", "Working"].index(e_row['Status']))
+                    up_feedback = st.text_area("Feedback", value=str(e_row['Feedback']))
+                    
+                    up_int_date = e_row['Interview Date']
+                    up_join_date = e_row['Joining Date']
+                    up_sr_date = e_row['SR Date']
+
+                    if up_status == "Interviewed": up_int_date = st.date_input("Actual Interview Date").strftime("%d-%m-%Y")
+                    if up_status == "Onboarded":
+                        j_date = st.date_input("Final Joining Date")
+                        up_join_date = j_date.strftime("%d-%m-%Y")
+                        c_master = pd.DataFrame(client_sheet.get_all_records())
+                        c_row = c_master[c_master['Client Name'] == e_row['Client Name']]
+                        days = int(c_row.iloc[0]['SR Days']) if not c_row.empty else 0
+                        up_sr_date = (j_date + timedelta(days=days)).strftime("%d-%m-%Y")
+
+                    if st.button("Save Changes"):
+                        all_ids = cand_sheet.col_values(1)
+                        try:
+                            sheet_row_idx = all_ids.index(st.session_state.edit_id) + 1
+                            cand_sheet.update_cell(sheet_row_idx, 7, up_int_date)
+                            cand_sheet.update_cell(sheet_row_idx, 8, up_status)
+                            cand_sheet.update_cell(sheet_row_idx, 10, up_join_date)
+                            cand_sheet.update_cell(sheet_row_idx, 11, up_sr_date)
+                            cand_sheet.update_cell(sheet_row_idx, 12, up_feedback)
+                            st.success("Updated!"); del st.session_state.edit_id; st.rerun()
+                        except: st.error("Row Not Found")
+                    if st.button("Cancel"): del st.session_state.edit_id; st.rerun()
