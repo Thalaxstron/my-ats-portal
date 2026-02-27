@@ -5,9 +5,9 @@ import urllib.parse
 from datetime import datetime, timedelta
 from google.oauth2.service_account import Credentials
 
-# ---------------------------------------------------------
+# =========================================================
 # PAGE CONFIG
-# ---------------------------------------------------------
+# =========================================================
 st.set_page_config(page_title="TAKECARE ATS", layout="wide")
 
 st.markdown("""
@@ -24,7 +24,7 @@ input, textarea, select {
 .main-title{
     text-align:center;
     color:white;
-    font-size:40px;
+    font-size:38px;
     font-weight:bold;
 }
 .sub-title{
@@ -42,9 +42,9 @@ input, textarea, select {
 </style>
 """, unsafe_allow_html=True)
 
-# ---------------------------------------------------------
-# GOOGLE SHEET CONNECTION
-# ---------------------------------------------------------
+# =========================================================
+# GOOGLE CONNECTION
+# =========================================================
 def connect():
     scope = ["https://www.googleapis.com/auth/spreadsheets",
              "https://www.googleapis.com/auth/drive"]
@@ -60,15 +60,13 @@ data_sheet = sh.worksheet("ATS_Data")
 client_sheet = sh.worksheet("Client_Master")
 log_sheet = sh.worksheet("Activity_Logs")
 
-# ---------------------------------------------------------
+# =========================================================
 # HELPER FUNCTIONS
-# ---------------------------------------------------------
+# =========================================================
 def next_ref():
     ids = data_sheet.col_values(1)
-    if len(ids) <= 1:
-        return "E00001"
     nums = [int(x[1:]) for x in ids[1:] if str(x).startswith("E")]
-    return f"E{max(nums)+1:05d}"
+    return f"E{max(nums)+1:05d}" if nums else "E00001"
 
 def add_log(user, action, cand, details):
     log_sheet.append_row([
@@ -76,9 +74,14 @@ def add_log(user, action, cand, details):
         user, action, cand, details
     ])
 
-# ---------------------------------------------------------
+def load_data():
+    df = pd.DataFrame(data_sheet.get_all_records())
+    df.columns = df.columns.str.strip()
+    return df
+
+# =========================================================
 # SESSION
-# ---------------------------------------------------------
+# =========================================================
 if "logged" not in st.session_state:
     st.session_state.logged = False
 
@@ -99,8 +102,9 @@ if not st.session_state.logged:
 
         if st.button("LOGIN", use_container_width=True):
             users = pd.DataFrame(user_sheet.get_all_records())
+            users.columns = users.columns.str.strip()
             row = users[(users["Mail_ID"]==email) &
-                        (users["Password"]==password)]
+                        (users["Password"].astype(str)==password)]
             if not row.empty:
                 st.session_state.logged = True
                 st.session_state.user = row.iloc[0].to_dict()
@@ -116,6 +120,7 @@ if not st.session_state.logged:
 else:
 
     user = st.session_state.user
+    df = load_data()
 
     # ---------------- HEADER ----------------
     left, search_col, filter_col, logout_col = st.columns([4,1.5,1,0.8])
@@ -127,7 +132,7 @@ else:
         st.markdown("<div class='target-bar'>📞 Target for Today: 80+ Telescreening Calls / 3-5 Interview / 1+ Joining</div>", unsafe_allow_html=True)
 
     with search_col:
-        search = st.text_input("Search (any thing in data sheet)")
+        search = st.text_input("Search")
 
     with filter_col:
         open_filter = False
@@ -139,77 +144,75 @@ else:
             st.session_state.clear()
             st.rerun()
 
-    # ---------------- FILTER POPUP ----------------
-    filter_values = {}
+    # =====================================================
+    # ROLE FILTER
+    # =====================================================
+    if user["Role"]=="RECRUITER":
+        df = df[df["HR Name"]==user["Username"]]
 
-    if open_filter:
-        with st.expander("Filter Options", expanded=True):
-            c1,c2 = st.columns(2)
-            with c1:
-                filter_values["Client"] = st.selectbox("Client Name",
-                    ["All"]+data_sheet.col_values(5)[1:])
-                filter_values["Interview From"] = st.date_input("Interview From")
-            with c2:
-                filter_values["Recruiter"] = st.selectbox("User Name",
-                    ["All"]+user_sheet.col_values(1)[1:])
-                filter_values["Interview To"] = st.date_input("Interview To")
+    if user["Role"]=="TL":
+        users = pd.DataFrame(user_sheet.get_all_records())
+        team = users[users["Report_To"]==user["Username"]]["Username"].tolist()
+        df = df[df["HR Name"].isin(team+[user["Username"]])]
 
-    # ---------------- NEW SHORTLIST ----------------
-    col_space, col_btn = st.columns([5,1])
-    with col_btn:
-        new_entry = st.button("+ New Shortlist")
+    # =====================================================
+    # AUTO DELETE DISPLAY RULES
+    # =====================================================
+    now = datetime.now()
+    df["Shortlisted Date"] = pd.to_datetime(df["Shortlisted Date"], errors="coerce", dayfirst=True)
+    df["Interview Date"] = pd.to_datetime(df["Interview Date"], errors="coerce", dayfirst=True)
 
-    # ---------------- LOAD DATA ----------------
-    df = pd.DataFrame(data_sheet.get_all_records())
+    df = df[~((df["Status"]=="Shortlisted") &
+              (df["Shortlisted Date"] < now - timedelta(days=7)))]
 
-    if not df.empty:
+    df = df[~((df["Status"].isin(["Interviewed","Selected","Rejected","Hold"])) &
+              (df["Interview Date"] < now - timedelta(days=30)))]
 
-        # ROLE FILTER
-        if user["Role"]=="RECRUITER":
-            df = df[df["HR Name"]==user["Username"]]
+    df = df[~((df["Status"].isin(["Left","Not Joined"])) &
+              (df["Interview Date"] < now - timedelta(days=3)))]
 
-        if user["Role"]=="TL":
-            users = pd.DataFrame(user_sheet.get_all_records())
-            team = users[users["Report_To"]==user["Username"]]["Username"].tolist()
-            df = df[df["HR Name"].isin(team+[user["Username"]])]
+    # =====================================================
+    # SEARCH
+    # =====================================================
+    if search:
+        df = df[df.astype(str).apply(lambda x: search.lower() in x.to_string().lower(), axis=1)]
 
-        # SEARCH
-        if search:
-            df = df[df.astype(str).apply(lambda x: search.lower() in x.to_string().lower(), axis=1)]
+    # =====================================================
+    # DATA TABLE
+    # =====================================================
+    st.dataframe(df, use_container_width=True)
 
-        # AUTO HIDE RULES
-        now = datetime.now()
-        df["Shortlisted Date"] = pd.to_datetime(df["Shortlisted Date"], errors='coerce', dayfirst=True)
-        df["Interview Date"] = pd.to_datetime(df["Interview Date"], errors='coerce', dayfirst=True)
+    # =====================================================
+    # DOWNLOAD (ADMIN ONLY)
+    # =====================================================
+    if user["Role"]=="ADMIN":
+        st.download_button("Download Report", df.to_csv(index=False), "ATS_Report.csv")
 
-        df = df[~((df["Status"]=="Shortlisted") &
-                  (df["Shortlisted Date"] < now - timedelta(days=7)))]
+    # =====================================================
+    # NEW SHORTLIST POPUP
+    # =====================================================
+    if st.button("+ New Shortlist"):
 
-        df = df[~((df["Status"].isin(["Selected","Rejected","Hold"])) &
-                  (df["Interview Date"] < now - timedelta(days=30)))]
-
-        df = df[~((df["Status"].isin(["Left","Not Joined"])) &
-                  (df["Interview Date"] < now - timedelta(days=3)))]
-
-        st.dataframe(df, use_container_width=True)
-
-    # ---------------- ADD NEW ENTRY POPUP ----------------
-    if new_entry:
         with st.form("new_form"):
+
             ref = next_ref()
+            today = datetime.now().strftime("%d-%m-%Y")
+
             st.write("Reference ID:", ref)
+            st.write("Shortlisted Date:", today)
 
             c1,c2 = st.columns(2)
+
             with c1:
                 name = st.text_input("Candidate Name")
                 phone = st.text_input("Contact Number")
-                client_name = st.selectbox("Client Name",
-                    client_sheet.col_values(1)[1:])
-                status="Shortlisted"
+                client_list = list(set(client_sheet.col_values(1)[1:]))
+                client_name = st.selectbox("Client Name", client_list)
+
             with c2:
                 pos_df = pd.DataFrame(client_sheet.get_all_records())
                 positions = pos_df[pos_df["Client Name"]==client_name]["Position"]
-                position = st.selectbox("Position or Job Title", positions)
+                position = st.selectbox("Position", positions)
                 commit = st.date_input("Commitment Date")
                 feedback = st.text_area("Feedback")
                 send_wa = st.checkbox("WhatsApp Invite")
@@ -218,11 +221,11 @@ else:
             cancel = st.form_submit_button("Cancel")
 
             if submit:
-                today = datetime.now().strftime("%d-%m-%Y")
+
                 data_sheet.append_row([
                     ref,today,name,phone,client_name,
                     position,commit.strftime("%d-%m-%Y"),
-                    status,user["Username"],"", "",feedback
+                    "Shortlisted",user["Username"],"", "",feedback
                 ])
 
                 add_log(user["Username"],"New Entry",name,"Shortlisted")
@@ -230,6 +233,7 @@ else:
                 if send_wa:
                     info = pos_df[(pos_df["Client Name"]==client_name)&
                                   (pos_df["Position"]==position)].iloc[0]
+
                     msg=f"""Dear {name},
 
 Congratulations, upon reviewing your application, we would like to invite you for Direct interview and get to know you better.
@@ -242,9 +246,12 @@ Interview venue: {info['Address']}
 Map Location: {info['Map Link']}
 Contact Person: {info['Contact Person']}
 
+Please Let me know when you arrive at the interview location. All the best....
+
 Regards,
 {user['Username']}
 Takecare HR Team"""
+
                     wa=f"https://wa.me/91{phone}?text={urllib.parse.quote(msg)}"
                     st.markdown(f"[Send WhatsApp]({wa})")
 
