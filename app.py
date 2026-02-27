@@ -83,8 +83,7 @@ if not st.session_state.logged:
     _, c, _ = st.columns([1,1.2,1])
     with c:
         st.markdown("###")
-        email = st.text_input("Email ID")
-        show_pass = st.checkbox("Show Password")
+        email = st.text_input("Email ID"), st.box_input
         password = st.text_input("Password", type="default" if show_pass else "password")
         remember = st.checkbox("Remember Me")
 
