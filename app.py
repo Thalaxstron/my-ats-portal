@@ -5,11 +5,10 @@ import re
 import bcrypt
 import uuid
 import time
-import os
-from datetime import datetime, timedelta
+from datetime import datetime
 
 # ---------------------------
-# DATABASE SETUP
+# DATABASE CONNECTION
 # ---------------------------
 conn = sqlite3.connect("ats_database.db", check_same_thread=False)
 cursor = conn.cursor()
@@ -36,10 +35,13 @@ CREATE TABLE IF NOT EXISTS candidates (
 conn.commit()
 
 # ---------------------------
-# SESSION SETTINGS
+# SECURITY SETTINGS
 # ---------------------------
 SESSION_TIMEOUT = 1800  # 30 minutes
 
+# ---------------------------
+# SESSION MANAGEMENT
+# ---------------------------
 def regenerate_session():
     st.session_state.session_id = str(uuid.uuid4())
 
@@ -49,15 +51,26 @@ def logout():
 
 def check_timeout():
     if "last_activity" in st.session_state:
-        if time.time() - st.session_state.last_activity > SESSION_TIMEOUT:
-            st.warning("Session Expired. Please Login Again.")
+        elapsed = time.time() - st.session_state.last_activity
+        if elapsed > SESSION_TIMEOUT:
+            st.warning("⏳ Session expired due to inactivity.")
             logout()
 
 # ---------------------------
-# SECURITY VALIDATIONS
+# PHONE VALIDATION (POINT 82)
 # ---------------------------
 def valid_phone(phone):
-    return re.fullmatch(r"\d{10}", phone)
+    """
+    Rules:
+    ✔ Only digits
+    ✔ Exactly 10 digits
+    ✔ No spaces
+    ✔ No special characters
+    ✔ Cannot start with 0
+    ✔ Duplicate allowed
+    """
+    pattern = r"^[1-9][0-9]{9}$"
+    return re.fullmatch(pattern, phone)
 
 def clean_text(text):
     return re.sub(r"[^a-zA-Z0-9@.\s]", "", text)
@@ -69,17 +82,19 @@ def create_default_admin():
     cursor.execute("SELECT * FROM users WHERE username=?", ("admin",))
     if not cursor.fetchone():
         hashed = bcrypt.hashpw("admin123".encode(), bcrypt.gensalt())
-        cursor.execute("INSERT INTO users (username,password) VALUES (?,?)",
-                       ("admin", hashed))
+        cursor.execute(
+            "INSERT INTO users (username,password) VALUES (?,?)",
+            ("admin", hashed)
+        )
         conn.commit()
 
 create_default_admin()
 
 # ---------------------------
-# LOGIN SYSTEM
+# LOGIN PAGE
 # ---------------------------
 def login_page():
-    st.title("🔐 ATS Login")
+    st.title("🔐 Takecare Manpower ATS Login")
 
     username = st.text_input("Username")
     password = st.text_input("Password", type="password")
@@ -96,77 +111,117 @@ def login_page():
             st.success("Login Successful")
             st.rerun()
         else:
-            st.error("Invalid Credentials")
+            st.error("Invalid Username or Password")
 
 # ---------------------------
-# MAIN DASHBOARD
+# DASHBOARD
 # ---------------------------
 def dashboard():
+
     check_timeout()
     st.session_state.last_activity = time.time()
 
-    st.title("📊 ATS Recruitment Dashboard")
+    st.title("🏢 Takecare Manpower Services Pvt Ltd")
+    st.subheader("📊 ATS Tracking Dashboard")
 
-    if st.button("Logout"):
-        logout()
+    st.write(f"Welcome back, **{st.session_state.username}**")
 
-    st.subheader("➕ Add Candidate")
+    col1, col2 = st.columns([1,1])
+    with col1:
+        st.info("🎯 Target: 80+ Telescreening / 3-5 Interview / 1+ Joining")
+    with col2:
+        if st.button("🚪 Logout"):
+            logout()
+
+    st.divider()
+
+    # ---------------------------
+    # ADD CANDIDATE
+    # ---------------------------
+    st.subheader("➕ New Shortlist")
 
     name = clean_text(st.text_input("Candidate Name"))
-    phone = st.text_input("Phone (10 digits only)")
+    phone = st.text_input("Contact Number (10 digits only)")
     email = clean_text(st.text_input("Email"))
-    position = clean_text(st.text_input("Position"))
+    position = clean_text(st.text_input("Position / Job Title"))
 
     if st.button("Save Candidate"):
 
         if not valid_phone(phone):
-            st.error("Invalid Phone Number (Only 10 digits allowed)")
+            st.error("""
+            ❌ Invalid Phone Number:
+            - Must be 10 digits
+            - Only numbers allowed
+            - No special characters
+            - Cannot start with 0
+            """)
         else:
             cursor.execute("""
-                INSERT INTO candidates (name,phone,email,position,added_on)
-                VALUES (?,?,?,?,?)
-            """, (name, phone, email, position,
-                  datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
+                INSERT INTO candidates (name, phone, email, position, added_on)
+                VALUES (?, ?, ?, ?, ?)
+            """, (
+                name,
+                phone,
+                email,
+                position,
+                datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            ))
             conn.commit()
-            st.success("Candidate Saved Successfully")
+            st.success("✅ Candidate Saved Successfully")
 
-    st.subheader("📋 Candidate List")
+    st.divider()
 
-    df = pd.read_sql_query("SELECT * FROM candidates", conn)
-    st.dataframe(df)
+    # ---------------------------
+    # VIEW CANDIDATES
+    # ---------------------------
+    st.subheader("📋 ATS Tracking Table")
 
-    # WhatsApp Safe Link
-    if not df.empty:
-        selected_phone = st.text_input("Enter Phone for WhatsApp")
+    df = pd.read_sql_query("SELECT * FROM candidates ORDER BY id DESC", conn)
+    st.dataframe(df, use_container_width=True)
 
+    # ---------------------------
+    # WHATSAPP SAFE LINK
+    # ---------------------------
+    st.subheader("📲 WhatsApp Invite")
+
+    selected_phone = st.text_input("Enter Contact Number")
+
+    if selected_phone:
         if valid_phone(selected_phone):
             wa_link = f"https://wa.me/91{selected_phone}"
-            st.markdown(f"[Open WhatsApp Chat]({wa_link})")
-        elif selected_phone:
+            st.markdown(f"[👉 Open WhatsApp Chat]({wa_link})")
+        else:
             st.error("Invalid Phone Number")
 
-    # Delete Option
-    delete_id = st.number_input("Enter Candidate ID to Delete", step=1)
-    if st.button("Delete Candidate"):
+    # ---------------------------
+    # DELETE OPTION
+    # ---------------------------
+    st.subheader("🗑 Delete Candidate")
+
+    delete_id = st.number_input("Enter Candidate ID", min_value=1, step=1)
+
+    if st.button("Delete"):
         cursor.execute("DELETE FROM candidates WHERE id=?", (delete_id,))
         conn.commit()
-        st.success("Candidate Deleted")
+        st.success("Candidate Deleted Successfully")
 
-    # Backup Section
-    st.subheader("💾 Backup System")
+    st.divider()
+
+    # ---------------------------
+    # BACKUP SYSTEM
+    # ---------------------------
+    st.subheader("💾 Backup Database")
 
     if st.button("Download CSV Backup"):
         backup_df = pd.read_sql_query("SELECT * FROM candidates", conn)
-        backup_file = f"backup_{datetime.now().strftime('%Y%m%d')}.csv"
-        backup_df.to_csv(backup_file, index=False)
+        csv = backup_df.to_csv(index=False).encode("utf-8")
 
-        with open(backup_file, "rb") as f:
-            st.download_button(
-                label="Download File",
-                data=f,
-                file_name=backup_file,
-                mime="text/csv"
-            )
+        st.download_button(
+            label="Download CSV File",
+            data=csv,
+            file_name=f"ATS_Backup_{datetime.now().strftime('%Y%m%d')}.csv",
+            mime="text/csv"
+        )
 
 # ---------------------------
 # APP CONTROL
