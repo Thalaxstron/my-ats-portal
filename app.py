@@ -6,177 +6,195 @@ import urllib.parse
 from datetime import datetime, timedelta
 import time
 
-# --- 1. UI SETUP (Points 1, 2, 14-24, 70, 81) ---
-st.set_page_config(page_title="Takecare ATS", layout="wide", initial_sidebar_state="collapsed")
+# --- 1. PAGE CONFIG & UI ---
+st.set_page_config(page_title="Takecare Manpower ATS", layout="wide", initial_sidebar_state="collapsed")
 
+# Master CSS for Exact Image-to-Code Alignment
 st.markdown("""
     <style>
-    /* Full Gradient Background */
-    .stApp { background: linear-gradient(135deg, #d32f2f 0%, #0d47a1 100%) !important; background-attachment: fixed; }
+    /* Full Page Gradient Background */
+    .stApp {
+        background: linear-gradient(135deg, #d32f2f 0%, #0d47a1 100%) !important;
+        background-attachment: fixed;
+    }
     
-    /* Fixed Header Area - 2.5cm approximately */
-    .fixed-header {
-        position: fixed; top: 0; left: 0; width: 100%; height: 210px;
+    /* Fixed Container for Header (Points 24, 81) */
+    .header-wrapper {
+        position: fixed; top: 0; left: 0; width: 100%;
         background: linear-gradient(135deg, #d32f2f 0%, #0d47a1 100%);
-        z-index: 1000; padding: 15px 40px; border-bottom: 2px solid white;
+        z-index: 999; padding: 20px 45px 10px 45px;
+        height: 200px; border-bottom: 2px solid white;
     }
 
-    /* ATS Table - Excel Style Container */
-    .scroll-table { background-color: white; margin-top: 220px; border-radius: 0px; }
+    /* Table Container - Pure White for Excel Feel */
+    .excel-container {
+        background-color: white;
+        margin-top: 210px; /* Space for fixed header */
+        padding: 0px; border-radius: 0px; min-height: 80vh;
+    }
 
-    /* Input Boxes: White with Royal Blue Font (#0d47a1) */
+    /* Fixed Table Header (Excel Blue) */
+    .sticky-table-head {
+        position: sticky; top: 200px; z-index: 998;
+        background-color: #0d47a1; display: flex;
+        border-bottom: 1px solid #ccc;
+    }
+
+    .header-cell {
+        color: white; font-weight: bold; padding: 12px 5px;
+        text-align: center; border: 0.5px solid white; font-size: 13px;
+    }
+
+    /* Data Row Styling */
+    .data-row {
+        display: flex; border-bottom: 0.5px solid #eee; background-color: white;
+    }
+    .data-cell {
+        color: #0d47a1; padding: 10px 5px; text-align: center;
+        font-size: 13px; font-weight: 500; border-right: 0.5px solid #f0f0f0;
+    }
+
+    /* White Inputs with Royal Blue Text (Point 70) */
     div[data-baseweb="input"], input, select {
-        background-color: white !important; color: #0d47a1 !important; font-weight: bold !important;
+        background-color: white !important; color: #0d47a1 !important;
+        font-weight: bold !important; border: 1px solid #ccc !important;
     }
 
-    /* Column Header Styling */
-    .col-header { 
-        background-color: #0d47a1; color: white; padding: 10px; 
-        text-align: center; border: 0.5px solid white; font-weight: bold; font-size: 14px;
-    }
-    
-    /* Typography for Header */
-    .comp-name { color: white; font-size: 28px; font-weight: bold; margin:0; }
-    .slogan { color: white; font-size: 18px; font-style: italic; margin:0; }
-    .welcome { color: white; font-size: 20px; margin-top: 10px; }
-    .target { 
-        background: white; color: #0d47a1; padding: 5px 10px; 
-        border-radius: 5px; margin-top: 5px; display: inline-block; font-weight: bold;
+    .comp-title { color: white; font-size: 30px; font-weight: bold; margin: 0; }
+    .slogan { color: white; font-size: 18px; font-style: italic; margin-bottom: 10px; }
+    .target-pill { 
+        background: white; color: #0d47a1; padding: 6px 12px; 
+        border-radius: 5px; font-weight: bold; display: inline-block;
     }
     </style>
     """, unsafe_allow_html=True)
 
-# --- 2. DB CONNECTION ---
+# --- 2. DATABASE (Google Sheets) ---
 @st.cache_resource
-def get_db_connection():
+def connect_sheets():
     creds = Credentials.from_service_account_info(st.secrets["gcp_service_account"], 
             scopes=["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"])
     return authorize(creds)
 
-gc = get_db_connection()
+gc = connect_sheets()
 sh = gc.open("ATS_Cloud_Database")
 u_sheet, c_sheet, d_sheet = sh.worksheet("User_Master"), sh.worksheet("Client_Master"), sh.worksheet("ATS_Data")
 
-# --- 3. UTILS (Points 35, 61-65) ---
-def get_ref_id():
+# --- 3. LOGIC UTILS ---
+def generate_id():
     ids = d_sheet.col_values(1)
-    if len(ids) <= 1: return "E00001"
-    return f"E{int(ids[-1][1:]) + 1:05d}"
+    return f"E{int(ids[-1][1:]) + 1:05d}" if len(ids) > 1 else "E00001"
 
-def fix_date(d):
-    if pd.isna(d) or d == "": return ""
-    return str(d).split(' ')[0]
+def strip_time(val):
+    return str(val).split(' ')[0] if val else ""
 
-# --- 4. APP FLOW ---
-if 'auth' not in st.session_state: st.session_state.auth = False
-
-if not st.session_state.auth:
-    # Login Page (Point 3-12)
-    st.markdown("<h1 style='text-align:center; color:white;'>ATS PORTAL</h1>", unsafe_allow_html=True)
+# --- 4. APP AUTHENTICATION ---
+if 'user' not in st.session_state:
+    st.markdown("<h1 style='text-align:center; color:white; margin-top:100px;'>TAKECARE ATS LOGIN</h1>", unsafe_allow_html=True)
     _, lbox, _ = st.columns([1, 1, 1])
     with lbox:
-        uid = st.text_input("User ID")
-        ups = st.text_input("Password", type="password")
-        if st.button("LOGIN", use_container_width=True):
-            users = pd.DataFrame(u_sheet.get_all_records())
-            match = users[(users['Mail_ID']==uid) & (users['Password'].astype(str)==ups)]
-            if not match.empty:
-                st.session_state.auth = True
-                st.session_state.u = match.iloc[0].to_dict()
-                st.rerun()
-else:
-    u = st.session_state.u
-    
-    # --- FIXED HEADER (Exact 81 Point Alignment) ---
-    st.markdown(f"""
-        <div class="fixed-header">
-            <div style="display: flex; justify-content: space-between;">
-                <div style="width: 50%;">
-                    <div class="comp-name">Takecare Manpower Services Pvt Ltd</div>
-                    <div class="slogan">Successful HR Firm</div>
-                    <div class="welcome">Welcome back, {u['Username']}!</div>
-                    <div class="target">📞 Target: 80+ Calls / 3-5 Interview / 1+ Joining</div>
-                </div>
+        with st.container(border=True):
+            e = st.text_input("User ID (Email)")
+            p = st.text_input("Password", type="password")
+            if st.button("LOGIN", use_container_width=True, type="primary"):
+                users = pd.DataFrame(u_sheet.get_all_records())
+                match = users[(users['Mail_ID']==e) & (users['Password'].astype(str)==p)]
+                if not match.empty:
+                    st.session_state.user = match.iloc[0].to_dict()
+                    st.rerun()
+    st.stop()
+
+# --- 5. DASHBOARD ---
+u = st.session_state.user
+
+# FIXED PAGE HEADER (Points 14-24, 81)
+st.markdown(f"""
+    <div class="header-wrapper">
+        <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+            <div>
+                <div class="comp-title">Takecare Manpower Services Pvt Ltd</div>
+                <div class="slogan">Successful HR Firm</div>
+                <div style="color:white; font-size:18px; margin: 8px 0;">Welcome back, {u['Username']}!</div>
+                <div class="target-pill">📞 Target: 80+ Calls / 3-5 Interview / 1+ Joining</div>
             </div>
         </div>
-    """, unsafe_allow_html=True)
+    </div>
+""", unsafe_allow_html=True)
 
-    # Right: 4 Action Buttons (Point 14-23)
-    _, r_side = st.columns([3, 1])
-    with r_side:
-        st.markdown("<div style='height:15px;'></div>", unsafe_allow_html=True)
-        if st.button("Logout 🚪", use_container_width=True): st.session_state.auth = False; st.rerun()
-        search_q = st.text_input("Search", placeholder="Search Candidate...", label_visibility="collapsed")
-        f_col, n_col = st.columns(2)
-        with f_col:
-            if u['Role'] in ['ADMIN', 'TL']: st.button("Filter ⚙️", use_container_width=True)
-        with n_col:
-            if st.button("+ New Shortlist", type="primary", use_container_width=True):
-                @st.dialog("Add Entry")
-                def add():
-                    c_db = pd.DataFrame(c_sheet.get_all_records())
-                    rid = get_ref_id()
-                    c1, c2 = st.columns(2)
-                    nm = c1.text_input("Candidate Name")
-                    ph = c2.text_input("Contact Number")
-                    cl = c1.selectbox("Client", c_db['Client Name'].unique())
-                    jt = c2.selectbox("Job Title", c_db[c_db['Client Name']==cl]['Position'].unique())
-                    dt = c1.date_input("Interview Date")
-                    if st.button("SUBMIT"):
-                        d_sheet.append_row([rid, datetime.now().strftime("%d-%m-%Y"), nm, ph, cl, jt, dt.strftime("%d-%m-%Y"), "Shortlisted", u['Username'], "", "", ""])
-                        st.rerun()
-                add()
+# Right Side Action Buttons
+_, r_btns = st.columns([3, 1])
+with r_btns:
+    st.markdown("<div style='height:15px;'></div>", unsafe_allow_html=True)
+    if st.button("Logout 🚪", use_container_width=True): del st.session_state.user; st.rerun()
+    search = st.text_input("Search", placeholder="Search Data...", label_visibility="collapsed")
+    f_c, n_c = st.columns(2)
+    f_c.button("Filter ⚙️", use_container_width=True)
+    if n_col := n_c.button("+ New Shortlist", type="primary", use_container_width=True):
+        @st.dialog("➕ Add New Entry")
+        def add_entry():
+            clients = pd.DataFrame(c_sheet.get_all_records())
+            rid = generate_id()
+            c1, c2 = st.columns(2)
+            name = c1.text_input("Candidate Name")
+            phone = c2.text_input("Contact Number")
+            cl = c1.selectbox("Client", clients['Client Name'].unique())
+            jt = c2.selectbox("Job Title", clients[clients['Client Name']==cl]['Position'].unique())
+            dt = c1.date_input("Interview Date")
+            if st.button("SAVE"):
+                d_sheet.append_row([rid, datetime.now().strftime("%d-%m-%Y"), name, phone, cl, jt, dt.strftime("%d-%m-%Y"), "Shortlisted", u['Username'], "", "", ""])
+                st.rerun()
+        add_entry()
 
-    # --- ATS TABLE (Excel Look & Feel) ---
-    st.markdown('<div class="scroll-table">', unsafe_allow_html=True)
-    df = pd.DataFrame(d_sheet.get_all_records())
+# --- 6. EXCEL-STYLE TRACKING TABLE ---
+st.markdown('<div class="excel-container">', unsafe_allow_html=True)
+
+# Table Header Labels (Exact Mapping)
+headers = ["Ref ID", "Candidate", "Contact", "Job Title", "Int. Date", "Status", "Joined", "SR Date", "Edit", "WA"]
+widths = [10, 15, 12, 18, 12, 10, 10, 10, 5, 5]
+
+# Render Sticky Headers
+h_cols = st.columns(widths)
+for col, h in zip(h_cols, headers):
+    col.markdown(f'<div class="header-cell" style="background-color:#0d47a1;">{h}</div>', unsafe_allow_html=True)
+
+# Fetch Data
+df = pd.DataFrame(d_sheet.get_all_records())
+if u['Role'] == 'RECRUITER': df = df[df['HR Name'] == u['Username']]
+if search: df = df[df.astype(str).apply(lambda x: x.str.contains(search, case=False)).any(axis=1)]
+
+# Render Data Rows
+for i, row in df.iterrows():
+    r_cols = st.columns(widths)
+    r_cols[0].markdown(f'<div class="data-cell">{row["Reference_ID"]}</div>', unsafe_allow_html=True)
+    r_cols[1].markdown(f'<div class="data-cell">{row["Candidate Name"]}</div>', unsafe_allow_html=True)
+    r_cols[2].markdown(f'<div class="data-cell">{row["Contact Number"]}</div>', unsafe_allow_html=True)
+    r_cols[3].markdown(f'<div class="data-cell">{row["Job Title"]}</div>', unsafe_allow_html=True)
+    r_cols[4].markdown(f'<div class="data-cell">{strip_time(row["Interview Date"])}</div>', unsafe_allow_html=True)
+    r_cols[5].markdown(f'<div class="data-cell">{row["Status"]}</div>', unsafe_allow_html=True)
+    r_cols[6].markdown(f'<div class="data-cell">{strip_time(row["Joining Date"])}</div>', unsafe_allow_html=True)
+    r_cols[7].markdown(f'<div class="data-cell">{strip_time(row["SR Date"])}</div>', unsafe_allow_html=True)
     
-    # Filter Logic (66-68)
-    if u['Role'] == 'RECRUITER': df = df[df['HR Name'] == u['Username']]
-    if search_q: df = df[df.astype(str).apply(lambda x: x.str.contains(search_q, case=False)).any(axis=1)]
+    # Action Pencil
+    if r_cols[8].button("📝", key=f"ed{i}"):
+        @st.dialog("Update Status")
+        def update_val(r):
+            ns = st.selectbox("New Status", ["Interviewed", "Selected", "Onboarded", "Rejected", "Left"])
+            nd = st.date_input("Action Date")
+            if st.button("SAVE"):
+                idx = df[df['Reference_ID']==r['Reference_ID']].index[0] + 2
+                d_sheet.update_cell(idx, 8, ns)
+                if ns == "Interviewed": d_sheet.update_cell(idx, 7, nd.strftime("%d-%m-%Y"))
+                if ns == "Onboarded":
+                    d_sheet.update_cell(idx, 10, nd.strftime("%d-%m-%Y"))
+                    cm = pd.DataFrame(c_sheet.get_all_records())
+                    days = cm[cm['Client Name']==r['Client Name']]['SR Days'].values[0]
+                    sr_val = (nd + timedelta(days=int(days))).strftime("%d-%m-%Y")
+                    d_sheet.update_cell(idx, 11, sr_val)
+                st.rerun()
+        update_val(row)
 
-    # Headers based on your specific list
-    h_cols = st.columns([1, 1.5, 1.2, 1.5, 1.2, 1.2, 1.2, 1.2, 0.8, 0.8])
-    labels = ["Ref ID", "Candidate", "Contact", "Job Title", "Int. Date", "Status", "Joined", "SR Date", "Edit", "WA"]
-    for col, l in zip(h_cols, labels): col.markdown(f'<div class="col-header">{l}</div>', unsafe_allow_html=True)
+    # WA Button
+    if r_cols[9].button("📲", key=f"wa{i}"):
+        st.write("WA Link Triggered...") # Add actual URL logic here
 
-    for idx, row in df.iterrows():
-        r_cols = st.columns([1, 1.5, 1.2, 1.5, 1.2, 1.2, 1.2, 1.2, 0.8, 0.8])
-        r_cols[0].write(row['Reference_ID'])
-        r_cols[1].write(row['Candidate Name'])
-        r_cols[2].write(row['Contact Number'])
-        r_cols[3].write(row['Job Title'])
-        r_cols[4].write(fix_date(row['Interview Date']))
-        r_cols[5].write(row['Status'])
-        r_cols[6].write(fix_date(row['Joining Date']))
-        r_cols[7].write(fix_date(row['SR Date']))
-        
-        # Point 47: Action Pencil
-        if r_cols[8].button("📝", key=f"e{idx}"):
-            @st.dialog("Update Status")
-            def update(r):
-                ns = st.selectbox("Status", ["Interviewed", "Selected", "Onboarded", "Rejected", "Left"])
-                nd = st.date_input("Select Date")
-                fb = st.text_input("Feedback", max_chars=20)
-                if st.button("SAVE"):
-                    s_idx = df[df['Reference_ID']==r['Reference_ID']].index[0] + 2
-                    d_sheet.update_cell(s_idx, 8, ns) # Status update
-                    d_sheet.update_cell(s_idx, 12, fb)
-                    if ns == "Interviewed": d_sheet.update_cell(s_idx, 7, nd.strftime("%d-%m-%Y"))
-                    if ns == "Onboarded":
-                        d_sheet.update_cell(s_idx, 10, nd.strftime("%d-%m-%Y"))
-                        cm = pd.DataFrame(c_sheet.get_all_records())
-                        days = cm[cm['Client Name']==r['Client Name']]['SR Days'].values[0]
-                        sr_val = (nd + timedelta(days=int(days))).strftime("%d-%m-%Y")
-                        d_sheet.update_cell(s_idx, 11, sr_val) # SR Date calculation
-                    st.rerun()
-            update(row)
-
-        # Point 46: WA Invite
-        if r_cols[9].button("📲", key=f"w{idx}"):
-            c_info = pd.DataFrame(c_sheet.get_all_records())
-            ci = c_info[c_info['Client Name']==row['Client Name']].iloc[0]
-            msg = f"Dear {row['Candidate Name']},\nInvite for {row['Job Title']}.\nDate: {row['Interview Date']}\nVenue: {ci.get('Address','')}\nMap: {ci.get('Map Link','')}"
-            st.markdown(f'<meta http-equiv="refresh" content="0;URL=\'https://wa.me/91{row["Contact Number"]}?text={urllib.parse.quote(msg)}\'">', unsafe_allow_html=True)
-
-    st.markdown('</div>', unsafe_allow_html=True)
+st.markdown('</div>', unsafe_allow_html=True)
