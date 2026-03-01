@@ -94,12 +94,7 @@ if not st.session_state.logged_in:
             else:
                 st.error("Invalid Credentials")
 
-# ---------------- DASHBOARD ----------------
-else:
-
-    u_data = st.session_state.user_data
-
-    # ----------- HEADER LAYOUT -----------
+# ----------- HEADER LAYOUT -----------
     left, right = st.columns([4,1])
 
     with left:
