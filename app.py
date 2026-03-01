@@ -7,35 +7,79 @@ from datetime import datetime, timedelta
 
 st.set_page_config(page_title="Takecare Manpower ATS", layout="wide")
 
-# ---------------- CSS ----------------
+# ---------------- ENTERPRISE CSS ----------------
 st.markdown("""
 <style>
 
 .stApp {
-    background: linear-gradient(135deg, #d32f2f 0%, #0d47a1 100%) !important;
-    background-attachment: fixed;
+    background:#f4f6f9;
 }
 
-.main-title {color:white;font-size:28px;font-weight:bold;margin-bottom:0px;}
-.sub-slogan {color:white;font-size:16px;margin-bottom:5px;}
-.welcome {color:white;font-size:20px;margin-bottom:5px;}
-.target-bar {background:#1565c0;color:white;padding:8px;border-radius:5px;font-weight:bold;margin-bottom:10px;}
-
-.header-row {
-    position: sticky;
+/* ===== FIXED TOP PANEL ===== */
+.fixed-top-panel {
+    position: fixed;
     top: 0;
+    left: 0;
+    right: 0;
     background: white;
     z-index: 999;
-    font-weight: bold;
-    border-bottom: 2px solid #ccc;
-    padding:5px 0px;
+    padding: 15px 40px 10px 40px;
+    box-shadow: 0px 3px 8px rgba(0,0,0,0.1);
 }
 
+/* ===== HEADER TEXT ===== */
+.company {
+    font-size:22px;
+    font-weight:bold;
+    color:#0d47a1;
+}
+.slogan {
+    font-size:14px;
+    color:#777;
+}
+.welcome {
+    font-size:16px;
+    margin-top:6px;
+}
+.target {
+    background:#0d47a1;
+    color:white;
+    padding:6px 10px;
+    border-radius:5px;
+    font-size:13px;
+    margin-top:6px;
+}
+
+/* ===== CONTROL PANEL ===== */
+.control-panel {
+    text-align:right;
+}
+
+/* ===== TABLE HEADER ===== */
+.table-header {
+    font-weight:bold;
+    border-top:1px solid #eee;
+    border-bottom:2px solid #ccc;
+    padding:8px 0px;
+    margin-top:15px;
+}
+
+/* ===== SCROLL AREA ===== */
+.data-container {
+    margin-top:320px;
+    height:calc(100vh - 330px);
+    overflow-y:auto;
+    padding:0px 40px;
+}
+
+/* ===== DATA ROW ===== */
 .data-row {
     background:white;
-    padding:5px 0px;
+    padding:8px 0px;
+    border-bottom:1px solid #eee;
 }
 
+/* ===== BUTTON ===== */
 .stButton>button {
     background:#d32f2f !important;
     color:white !important;
@@ -46,7 +90,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# ---------------- DB ----------------
+# ---------------- DATABASE ----------------
 def get_gsheet_client():
     scope = ["https://www.googleapis.com/auth/spreadsheets",
              "https://www.googleapis.com/auth/drive"]
@@ -71,15 +115,15 @@ def get_next_ref_id():
 if 'logged_in' not in st.session_state:
     st.session_state.logged_in = False
 
-# ---------------- LOGIN ----------------
+# ---------------- LOGIN (UNCHANGED) ----------------
 if not st.session_state.logged_in:
 
-    st.markdown("<div class='main-title'>TAKECARE MANPOWER SERVICES PVT LTD</div>", unsafe_allow_html=True)
-    st.markdown("<div class='sub-slogan'>Successful HR Firm</div>", unsafe_allow_html=True)
+    st.markdown("### TAKECARE MANPOWER SERVICES PVT LTD")
+    st.markdown("##### ATS LOGIN")
 
     _, col, _ = st.columns([1,1.2,1])
     with col:
-        u_mail = st.text_input("Email")
+        u_mail = st.text_input("Email ID")
         u_pass = st.text_input("Password", type="password")
 
         if st.button("LOGIN", use_container_width=True):
@@ -92,18 +136,25 @@ if not st.session_state.logged_in:
                 st.session_state.user_data=user_row.iloc[0].to_dict()
                 st.rerun()
             else:
-                st.error("Invalid Credentials")
+                st.error("Incorrect username or password")
 
-# ----------- HEADER LAYOUT -----------
-    left, right = st.columns([4,1])
+# ---------------- DASHBOARD ----------------
+else:
 
-    with left:
-        st.markdown("<div class='main-title'>TAKECARE MANPOWER SERVICES PVT LTD</div>", unsafe_allow_html=True)
-        st.markdown("<div class='sub-slogan'>Successful HR Firm</div>", unsafe_allow_html=True)
+    u_data = st.session_state.user_data
+
+    # ===== FIXED PANEL START =====
+    st.markdown("<div class='fixed-top-panel'>", unsafe_allow_html=True)
+
+    col1, col2 = st.columns([3,1])
+
+    with col1:
+        st.markdown("<div class='company'>TAKECARE MANPOWER SERVICES PVT LTD</div>", unsafe_allow_html=True)
+        st.markdown("<div class='slogan'>Successful HR Firm</div>", unsafe_allow_html=True)
         st.markdown(f"<div class='welcome'>Welcome back, {u_data['Username']}!</div>", unsafe_allow_html=True)
-        st.markdown("<div class='target-bar'>Target for Today: 📞 80+ Telescreening Calls / 3-5 Interview / 1+ Joining</div>", unsafe_allow_html=True)
+        st.markdown("<div class='target'>📞 80+ Telescreening Calls / 3-5 Interview / 1+ Joining</div>", unsafe_allow_html=True)
 
-    with right:
+    with col2:
         if st.button("Logout"):
             st.session_state.logged_in=False
             st.rerun()
@@ -116,44 +167,34 @@ if not st.session_state.logged_in:
         if st.button("+ New Shortlist"):
             st.session_state.open_popup=True
 
-    # ---------------- POPUP ----------------
-    @st.dialog("Add New Candidate")
-    def new_entry_popup():
-        ref_id = get_next_ref_id()
-        st.write(f"Ref ID: {ref_id}")
-        c_name = st.text_input("Candidate Name")
-        c_phone = st.text_input("Contact")
-        c_master = pd.DataFrame(client_sheet.get_all_records())
-        sel_client = st.selectbox("Client Name",
-                                  ["-- Select --"] +
-                                  sorted(c_master['Client Name'].unique()))
-        pos_options=[]
-        if sel_client!="-- Select --":
-            pos_options = c_master[c_master['Client Name']==sel_client]['Position']
-        sel_pos = st.selectbox("Position", pos_options)
-        comm_date = st.date_input("Commitment Date")
-        feedback = st.text_area("Feedback")
+    # ===== TABLE HEADER =====
+    header_cols = st.columns([1,1.5,1.5,1.6,1.4,1.2,1.3,1.3,1.2,1,1])
+    headers = [
+        "Ref ID","Candidate Name","Contact Number",
+        "Position","Commitment / Interview Date",
+        "Status","Onboarded Date","SR Date",
+        "HR Name","Action","Whatsapp Invite"
+    ]
 
-        if st.button("Submit"):
-            today=datetime.now().strftime("%d-%m-%Y")
-            cand_sheet.append_row([
-                ref_id,today,c_name,c_phone,sel_client,
-                sel_pos,comm_date.strftime("%d-%m-%Y"),
-                "Shortlisted",u_data['Username'],"","",feedback
-            ])
-            st.success("Saved")
-            st.rerun()
+    st.markdown("<div class='table-header'>", unsafe_allow_html=True)
+    for col, head in zip(header_cols, headers):
+        col.write(head)
+    st.markdown("</div>", unsafe_allow_html=True)
 
-    if 'open_popup' in st.session_state:
-        new_entry_popup()
-        del st.session_state.open_popup
+    st.markdown("</div>", unsafe_allow_html=True)
+    # ===== FIXED PANEL END =====
 
-    # ---------------- TABLE ----------------
+    # ===== SCROLLABLE DATA AREA =====
+    st.markdown("<div class='data-container'>", unsafe_allow_html=True)
+
     raw_data = cand_sheet.get_all_records()
     if raw_data:
 
         df = pd.DataFrame(raw_data)
         df.columns = df.columns.str.strip()
+
+        if u_data['Role']=="RECRUITER":
+            df = df[df['HR Name']==u_data['Username']]
 
         now=datetime.now()
         df['Shortlisted Date']=pd.to_datetime(
@@ -164,28 +205,12 @@ if not st.session_state.logged_in:
             (df['Shortlisted Date']<now-timedelta(days=7))
         )]
 
-        column_widths=[1,1.8,1.5,1.6,1.4,1.2,1.3,1.3,1.2,1,1]
-
-        headers=[
-            "Ref ID","Candidate Name","Contact Number",
-            "Position / Job Title","Commitment Date",
-            "Status","Onboarded Date","SR Date",
-            "HR Name","Action","Whatsapp Invite"
-        ]
-
-        st.markdown("<div class='header-row'>",unsafe_allow_html=True)
-        cols=st.columns(column_widths)
-        for c,h in zip(cols,headers):
-            c.write(h)
-        st.markdown("</div>",unsafe_allow_html=True)
-
         for idx,row in df.iterrows():
 
             if search_query and search_query.lower() not in str(row).lower():
                 continue
 
-            st.markdown("<div class='data-row'>",unsafe_allow_html=True)
-            r_cols=st.columns(column_widths)
+            r_cols = st.columns([1,1.5,1.5,1.6,1.4,1.2,1.3,1.3,1.2,1,1])
 
             r_cols[0].write(row['Reference_ID'])
             r_cols[1].write(row['Candidate Name'])
@@ -197,46 +222,9 @@ if not st.session_state.logged_in:
             r_cols[7].write(row['SR Date'])
             r_cols[8].write(row['HR Name'])
 
-            if r_cols[9].button("Edit",key=row['Reference_ID']):
+            if r_cols[9].button("Edit", key=row['Reference_ID']):
                 st.session_state.edit_id=row['Reference_ID']
 
             r_cols[10].write("📲")
 
-            st.markdown("</div>",unsafe_allow_html=True)
-
-    # ------------- EDIT SIDEBAR (UNCHANGED LOGIC) -------------
-    if 'edit_id' in st.session_state:
-        with st.sidebar:
-            current_row=df[df['Reference_ID']==st.session_state.edit_id].iloc[0]
-            new_status=st.selectbox("Status",
-            ["Shortlisted","Interviewed","Selected","Hold",
-             "Rejected","Onboarded","Left","Not Joined"])
-
-            new_feedback=st.text_area("Feedback",
-                                      value=current_row['Feedback'])
-
-            if new_status=="Onboarded":
-                join_date=st.date_input("Joining Date")
-                c_master=pd.DataFrame(client_sheet.get_all_records())
-                sr_days=c_master[
-                    c_master['Client Name']==current_row['Client Name']
-                ]['SR Days'].values[0]
-                sr_date=(join_date+timedelta(days=int(sr_days))).strftime("%d-%m-%Y")
-                st.info(f"SR Date: {sr_date}")
-
-            if st.button("Update Sheet"):
-                gsheet_row_idx=df.index[
-                    df['Reference_ID']==st.session_state.edit_id
-                ][0]+2
-
-                cand_sheet.update_cell(gsheet_row_idx,8,new_status)
-                cand_sheet.update_cell(gsheet_row_idx,12,new_feedback)
-
-                if new_status=="Onboarded":
-                    cand_sheet.update_cell(gsheet_row_idx,10,
-                                           join_date.strftime("%d-%m-%Y"))
-                    cand_sheet.update_cell(gsheet_row_idx,11,sr_date)
-
-                st.success("Updated")
-                del st.session_state.edit_id
-                st.rerun()
+    st.markdown("</div>", unsafe_allow_html=True)
