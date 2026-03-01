@@ -103,10 +103,10 @@ else:
     left, right = st.columns([4,1])
 
     with left:
-        st.markdown("<div class='main-title'>COMPANY NAME: TAKECARE MANPOWER SERVICES PVT LTD</div>", unsafe_allow_html=True)
+        st.markdown("<div class='main-title'>TAKECARE MANPOWER SERVICES PVT LTD</div>", unsafe_allow_html=True)
         st.markdown("<div class='sub-slogan'>Successful HR Firm</div>", unsafe_allow_html=True)
         st.markdown(f"<div class='welcome'>Welcome back, {u_data['Username']}!</div>", unsafe_allow_html=True)
-        st.markdown("<div class='target-bar'>📞 80+ Telescreening Calls / 3-5 Interview / 1+ Joining</div>", unsafe_allow_html=True)
+        st.markdown("<div class='target-bar'>Target for Today: 📞 80+ Telescreening Calls / 3-5 Interview / 1+ Joining</div>", unsafe_allow_html=True)
 
     with right:
         if st.button("Logout"):
