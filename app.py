@@ -1,160 +1,131 @@
 import streamlit as st
-import sqlite3
-import re
+import pandas as pd
+from gspread import authorize
+from google.oauth2.service_account import Credentials
+import urllib.parse
 from datetime import datetime, timedelta
 
-# -------------------- SESSION TIMEOUT --------------------
-SESSION_TIMEOUT = 30  # minutes
+# --- 1. PAGE CONFIG & UI ---
+st.set_page_config(page_title="Takecare Manpower ATS", layout="wide")
 
-# -------------------- DATABASE --------------------
-conn = sqlite3.connect("ats.db", check_same_thread=False)
-c = conn.cursor()
-
-c.execute("""
-CREATE TABLE IF NOT EXISTS users (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    username TEXT UNIQUE,
-    password TEXT
-)
-""")
-
-c.execute("""
-CREATE TABLE IF NOT EXISTS candidates (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT,
-    phone TEXT,
-    email TEXT,
-    experience TEXT,
-    status TEXT
-)
-""")
-
-conn.commit()
-
-# Default user create (first time only)
-try:
-    c.execute("INSERT INTO users (username, password) VALUES (?, ?)", ("admin", "admin123"))
-    conn.commit()
-except:
-    pass
-
-
-# -------------------- CSS FIX (No layout change) --------------------
+# Custom CSS (FIXED INPUT COLORS + RED LOGIN BUTTON)
 st.markdown("""
-<style>
+    <style>
+    .stApp {
+        background: linear-gradient(135deg, #d32f2f 0%, #0d47a1 100%) !important;
+        background-attachment: fixed;
+    }
 
-div[data-baseweb="input"] > div {
-    background-color: white !important;
-}
+    [data-testid="stHeader"] { background: transparent; }
 
-input {
-    background-color: white !important;
-    color: black !important;
-    font-weight: 500 !important;
-}
+    .main-title { color: white; text-align: center; font-size: 40px; font-weight: bold; margin-bottom: 0px; }
+    .sub-title { color: white; text-align: center; font-size: 25px; margin-bottom: 20px; }
+    .target-bar { background-color: #1565c0; color: white; padding: 10px; border-radius: 5px; font-weight: bold; margin-bottom: 10px; }
+    div[data-testid="stExpander"] { background-color: white; border-radius: 10px; }
 
-/* Red Login Button */
-.stButton > button {
-    background-color: #d32f2f !important;
-    color: white !important;
-    border-radius: 8px !important;
-    font-weight: bold !important;
-    border: none !important;
-}
+    /* ---------- FIX INPUT BOX WHITE ---------- */
+    div[data-baseweb="input"] > div {
+        background-color: white !important;
+    }
 
-.stButton > button:hover {
-    background-color: #b71c1c !important;
-    color: white !important;
-}
+    input {
+        background-color: white !important;
+        color: #0d47a1 !important;
+        font-weight: bold !important;
+    }
 
-</style>
-""", unsafe_allow_html=True)
+    textarea {
+        background-color: white !important;
+        color: #0d47a1 !important;
+        font-weight: bold !important;
+    }
 
+    /* ---------- FIX CHECKBOX WHITE ---------- */
+    div[data-baseweb="checkbox"] {
+        background-color: white !important;
+        padding: 5px;
+        border-radius: 6px;
+    }
 
-# -------------------- SESSION EXPIRY CHECK --------------------
-if "login_time" in st.session_state:
-    if datetime.now() - st.session_state.login_time > timedelta(minutes=SESSION_TIMEOUT):
-        st.session_state.clear()
-        st.warning("Session expired. Please login again.")
-        st.stop()
+    /* ---------- RED LOGIN BUTTON (NO SIZE CHANGE) ---------- */
+    .stButton > button {
+        background-color: #d32f2f !important;
+        color: white !important;
+        border-radius: 8px;
+        font-weight: bold;
+        border: none;
+    }
 
+    .stButton > button:hover {
+        background-color: #b71c1c !important;
+        color: white !important;
+    }
 
-# -------------------- LOGIN PAGE --------------------
-if "logged_in" not in st.session_state:
+    </style>
+    """, unsafe_allow_html=True)
 
-    st.title("HR Consultancy ATS Login")
+# --- 2. DATABASE CONNECTION ---
+def get_gsheet_client():
+    scope = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
+    creds = Credentials.from_service_account_info(st.secrets["gcp_service_account"], scopes=scope)
+    return authorize(creds)
 
-    username = st.text_input("Username")
-    password = st.text_input("Password", type="password")
+try:
+    client = get_gsheet_client()
+    sh = client.open("ATS_Cloud_Database") 
+    user_sheet = sh.worksheet("User_Master")
+    client_sheet = sh.worksheet("Client_Master")
+    cand_sheet = sh.worksheet("ATS_Data") 
+except Exception as e:
+    st.error(f"Database Error: {e}"); st.stop()
 
-    if st.button("Login"):
+# --- 3. HELPER FUNCTIONS ---
+def get_next_ref_id():
+    all_ids = cand_sheet.col_values(1)
+    if len(all_ids) <= 1: return "E00001"
+    valid_ids = [int(val[1:]) for val in all_ids[1:] if str(val).startswith("E") and str(val)[1:].isdigit()]
+    return f"E{max(valid_ids)+1:05d}" if valid_ids else "E00001"
 
-        c.execute("SELECT * FROM users WHERE username=? AND password=?", (username, password))
-        user = c.fetchone()
+# --- 4. SESSION MANAGEMENT ---
+if 'logged_in' not in st.session_state: 
+    st.session_state.logged_in = False
 
-        if user:
-            st.session_state.logged_in = True
-            st.session_state.login_time = datetime.now()
-            st.success("Login Successful")
+# --- 5. LOGIN LOGIC ---
+if not st.session_state.logged_in:
+
+    st.markdown("<div class='main-title'>TAKECARE MANPOWER SERVICES PVT LTD</div>", unsafe_allow_html=True)
+    st.markdown("<div class='sub-title'>ATS LOGIN</div>", unsafe_allow_html=True)
+    
+    _, col_m, _ = st.columns([1, 1.2, 1])
+    with col_m:
+        with st.container(border=True):
+            u_mail = st.text_input("Email ID")
+            u_pass = st.text_input("Password", type="password")
+            remember = st.checkbox("Remember Me")
+            if st.button("LOGIN", use_container_width=True):
+                users_df = pd.DataFrame(user_sheet.get_all_records())
+                users_df.columns = users_df.columns.str.strip()
+                user_row = users_df[(users_df['Mail_ID'] == u_mail) & (users_df['Password'].astype(str) == u_pass)]
+                
+                if not user_row.empty:
+                    st.session_state.logged_in = True
+                    st.session_state.user_data = user_row.iloc[0].to_dict()
+                    st.rerun()
+                else:
+                    st.error("Incorrect username or password")
+
+            st.caption("Forgot password? Contact Admin")
+
+else:
+    # --- DASHBOARD (UNCHANGED LOGIC) ---
+    u_data = st.session_state.user_data
+    
+    h_col1, h_col2, h_col3, h_col4 = st.columns([1, 2, 1.5, 0.5])
+    with h_col1: st.subheader("TAKECARE")
+    with h_col2: st.markdown(f"### Welcome back, {u_data['Username']}!")
+    with h_col4: 
+        if st.button("Log out"): 
+            st.session_state.logged_in = False
             st.rerun()
-        else:
-            st.error("Invalid Username or Password")
 
-    st.stop()
-
-
-# -------------------- MAIN DASHBOARD --------------------
-st.title("HR Consultancy ATS Portal")
-
-menu = st.sidebar.selectbox("Menu", ["Add Candidate", "View Candidates"])
-
-# -------------------- LOGOUT --------------------
-if st.sidebar.button("Logout"):
-    st.session_state.clear()
-    st.success("Logged out successfully")
-    st.rerun()
-
-
-# -------------------- ADD CANDIDATE --------------------
-if menu == "Add Candidate":
-
-    st.subheader("Add Candidate Details")
-
-    name = st.text_input("Candidate Name")
-    phone = st.text_input("Phone Number")
-    email = st.text_input("Email")
-    experience = st.selectbox("Experience", ["Fresher", "1-3 Years", "3-5 Years", "5+ Years"])
-    status = st.selectbox("Status", ["Active", "Inactive"])
-
-    if st.button("Save"):
-
-        # Phone Validation
-        if not re.fullmatch(r"\d{10}", phone):
-            st.error("Phone number must be exactly 10 digits.")
-            st.stop()
-
-        c.execute("INSERT INTO candidates (name, phone, email, experience, status) VALUES (?, ?, ?, ?, ?)",
-                  (name, phone, email, experience, status))
-        conn.commit()
-
-        st.success("Candidate Added Successfully")
-
-
-# -------------------- VIEW CANDIDATES --------------------
-if menu == "View Candidates":
-
-    st.subheader("Candidate List")
-
-    c.execute("SELECT * FROM candidates")
-    data = c.fetchall()
-
-    if data:
-        for row in data:
-            st.write(f"Name: {row[1]}")
-            st.write(f"Phone: {row[2]}")
-            st.write(f"Email: {row[3]}")
-            st.write(f"Experience: {row[4]}")
-            st.write(f"Status: {row[5]}")
-            st.write("---")
-    else:
-        st.info("No Candidates Found")
+    st.markdown("<div class='target-bar'>📞 Target for Today: 80+ Telescreening Calls / 3-5 Interview / 1+ Joining</div>", unsafe_allow_html=True)
