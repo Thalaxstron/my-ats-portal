@@ -93,10 +93,10 @@ else:
     <div class="fixed-header">
         <div style="float: left; width: 65%;">
             <h1 style="margin:0;">Takecare Manpower Service Pvt Ltd</h1>
-            <h4 style="margin:0; opacity:0.8;">Successful HR Firm</h4>
-            <p style="margin:5px 0; font-size:18px;">Welcome back, {u['Username']}!</p>
+            <h2 style="margin:0; opacity:1.0;">Successful HR Firm</h2>
+            <p style="margin:5px 0; font-size:22px;">Welcome back, {u['Username']}!</p>
             <div style="background: white; color: #d32f2f; padding: 5px 15px; border-radius: 5px; display: inline-block; font-weight: bold;">
-                📞 Target: 80+ Calls / 3-5 Interview / 1+ Joining
+                Target for Today: 📞 80+ Telescreening / 3-5 Interview / 1+ Joining
             </div>
         </div>
     </div>
