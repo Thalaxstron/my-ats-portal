@@ -255,3 +255,133 @@ if not st.session_state.login:
     login_page()
 else:
     dashboard()
+st.markdown("""
+<style>
+
+/* ===============================
+   GLOBAL BACKGROUND
+================================ */
+.stApp {
+    background: linear-gradient(135deg, #D32F2F 0%, #1565C0 100%);
+    background-attachment: fixed;
+    color: white;
+}
+
+/* ===============================
+   REMOVE DEFAULT HEADER/FOOTER
+================================ */
+header, footer {visibility: hidden;}
+
+/* ===============================
+   GLASS CARD EFFECT
+================================ */
+.glass-card {
+    background: rgba(255, 255, 255, 0.12);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    border-radius: 16px;
+    padding: 25px;
+    border: 1px solid rgba(255,255,255,0.2);
+}
+
+/* ===============================
+   COMPANY TITLE
+================================ */
+.company-title {
+    font-size: 28px;
+    font-weight: 800;
+    letter-spacing: 1px;
+}
+
+.slogan {
+    font-size: 20px;
+    opacity: 0.9;
+}
+
+/* ===============================
+   INPUT BOXES
+================================ */
+.stTextInput input,
+.stDateInput input,
+.stSelectbox div,
+textarea {
+    background-color: white !important;
+    color: #0D47A1 !important;
+    border-radius: 10px !important;
+    border: 2px solid #42A5F5 !important;
+    font-weight: 500;
+}
+
+/* ===============================
+   BUTTON STYLE
+================================ */
+.stButton>button {
+    background: linear-gradient(90deg, #D32F2F, #B71C1C);
+    color: white;
+    border-radius: 10px;
+    font-weight: bold;
+    padding: 8px 16px;
+    transition: 0.3s;
+}
+
+.stButton>button:hover {
+    background: linear-gradient(90deg, #B71C1C, #880E4F);
+    transform: scale(1.03);
+}
+
+/* ===============================
+   CHECKBOX WHITE
+================================ */
+.stCheckbox label {
+    color: white !important;
+}
+
+/* ===============================
+   TABLE STYLING
+================================ */
+[data-testid="stDataFrame"] {
+    background-color: white;
+    color: black;
+    border-radius: 12px;
+}
+
+/* ===============================
+   SCROLLABLE TABLE AREA
+================================ */
+.scroll-box {
+    height: 450px;
+    overflow-y: auto;
+    background: white;
+    color: black;
+    padding: 10px;
+    border-radius: 12px;
+}
+
+/* ===============================
+   POPUP EFFECT (Form container)
+================================ */
+div[data-testid="stForm"] {
+    background: rgba(255,255,255,0.15);
+    padding: 20px;
+    border-radius: 15px;
+    backdrop-filter: blur(10px);
+}
+
+/* ===============================
+   SUCCESS MESSAGE
+================================ */
+.stSuccess {
+    background-color: #1B5E20 !important;
+    color: white !important;
+}
+
+/* ===============================
+   ERROR MESSAGE
+================================ */
+.stError {
+    background-color: #B71C1C !important;
+    color: white !important;
+}
+
+</style>
+""", unsafe_allow_html=True)
