@@ -28,25 +28,23 @@ st.markdown("""
         padding: 5px 0;
     }
 
-    /* 3. Dropdown Visibility Fix (Correction #1 & #2) */
-    /* Targetting the selectbox and the text inside it after selection */
-    div[data-baseweb="select"] > div {
+    /* 3. Dropdown & Input Visibility Fix (CORRECTION #1 & #2) */
+    /* Force all selectbox text to be visible */
+    div[data-baseweb="select"] {
         background-color: white !important;
         border-radius: 5px !important;
     }
     
-    /* This ensures the selected text is visible (Dark Blue) against the white background */
-    div[data-testid="stSelectbox"] div[data-baseweb="select"] span, 
-    div[data-testid="stSelectbox"] input {
-        color: #00008b !important;
+    /* Target selected text, input text, and placeholder */
+    div[data-testid="stSelectbox"] * {
+        color: #000033 !important; 
         font-weight: bold !important;
-        -webkit-text-fill-color: #00008b !important;
     }
 
-    /* Targetting the dropdown list items */
-    div[role="listbox"] div {
-        color: #00008b !important;
-        font-weight: bold !important;
+    /* Target the dropdown list items specifically when they pop up */
+    div[role="listbox"] ul li {
+        color: #000033 !important;
+        background-color: white !important;
     }
 
     /* Standard inputs and textareas */
@@ -54,11 +52,11 @@ st.markdown("""
         background-color: white !important;
         border-radius: 5px !important;
     }
-    input, textarea { color: #00008b !important; font-weight: bold !important; }
+    input, textarea { color: #000033 !important; font-weight: bold !important; }
 
-    /* 4. Text Visibility Fix */
-    label p, .stMarkdown p, .stWrite { color: white !important; font-weight: 500 !important; }
-    [data-testid="stText"], .stMarkdown { color: white !important; }
+    /* 4. Text Visibility Fix for Labels */
+    label p { color: white !important; font-size: 14px !important; font-weight: bold !important; }
+    .stMarkdown p, .stWrite { color: white !important; }
 
     /* 5. Button Styling */
     .stButton > button {
@@ -162,11 +160,10 @@ else:
         with c1:
             name = st.text_input("Candidate Name")
             phone = st.text_input("Phone Number")
-            # Selectbox correction #1
-            cl_name = st.selectbox("Client", ["--Select--"] + sorted(cm['Client Name'].unique().tolist()))
+            cl_name = st.selectbox("Client", ["--Select--"] + sorted(cm['Client Name'].unique().tolist()), key="cl_sel")
         with c2:
             plist = cm[cm['Client Name'] == cl_name]['Position'].tolist() if cl_name != "--Select--" else []
-            pos = st.selectbox("Position", plist)
+            pos = st.selectbox("Position", plist, key="pos_sel")
             c_date = st.date_input("Commitment Date")
         
         feed = st.text_area("Initial Feedback")
@@ -180,10 +177,9 @@ else:
     def edit_candidate(row):
         st.markdown(f"<p style='color:black;'>Editing: <b>{row['Candidate Name']}</b></p>", unsafe_allow_html=True)
         st_list = ["Shortlisted", "Interviewed", "Selected", "Rejected", "Onboarded", "Hold", "Left"]
-        # Selectbox correction #2
-        curr_status = row.get('Status', 'Shortlisted')
+        curr_status = str(row.get('Status', 'Shortlisted'))
         idx_status = st_list.index(curr_status) if curr_status in st_list else 0
-        new_st = st.selectbox("Update Status", st_list, index=idx_status)
+        new_st = st.selectbox("Update Status", st_list, index=idx_status, key="st_upd")
         new_fb = st.text_input("Feedback", value=row.get('Feedback', ''))
         evt_date = st.date_input("Update Date (Interview/Onboard)")
         
@@ -212,23 +208,21 @@ else:
     with b_search:
         find = st.text_input("Search", label_visibility="collapsed", placeholder="Search Ref ID, Candidate Name...")
 
-    # --- 5. DATA TABLE (Correction #3: Column Names & Data Mapping) ---
+    # --- 5. DATA TABLE (CORRECTION #3: DATE VISIBILITY) ---
     st.markdown("---")
     cols = st.columns([0.8, 1.2, 1, 1, 1.2, 1.2, 0.8, 1, 1, 0.8, 0.5, 0.5])
     titles = ["Ref ID", "Candidate", "Contact", "Client Name", "Position / Job", "Comm / Int Date", "Status", "Onboard Date", "SR Date", "HR Name", "Edit", "WA"]
     for c, t in zip(cols, titles): c.markdown(f"<div class='header-box'>{t}</div>", unsafe_allow_html=True)
     
-    # Load and Clean Data
     raw_data = cand_sheet.get_all_records()
     data = pd.DataFrame(raw_data)
-    # Important: Remove hidden spaces from column names to ensure mapping works
-    data.columns = [c.strip() for c in data.columns] 
+    # Clear spaces and standardizing names
+    data.columns = [c.strip() for c in data.columns]
     data = data.iloc[::-1] 
     
     if u['Role'] == "RECRUITER": data = data[data['HR Name'] == u['Username']]
     if find: data = data[data.astype(str).apply(lambda x: x.str.contains(find, case=False)).any(axis=1)]
 
-    # Display Rows (Correction #3: Data Mapping)
     for _, r in data.iterrows():
         r_cols = st.columns([0.8, 1.2, 1, 1, 1.2, 1.2, 0.8, 1, 1, 0.8, 0.5, 0.5])
         r_cols[0].markdown(f"<div class='row-text'>{r.get('Reference_ID','')}</div>", unsafe_allow_html=True)
@@ -237,15 +231,18 @@ else:
         r_cols[3].markdown(f"<div class='row-text'>{r.get('Client Name','')}</div>", unsafe_allow_html=True)
         r_cols[4].markdown(f"<div class='row-text'>{r.get('Job Title','')}</div>", unsafe_allow_html=True)
         
-        # Commitment / Interview Date (Column 7 in Sheets)
-        r_cols[5].markdown(f"<div class='row-text'>{r.get('Commitment Date','')}</div>", unsafe_allow_html=True)
+        # Date display fix: using try-get to ensure column exists
+        comm_date = r.get('Commitment Date') if r.get('Commitment Date') else ""
+        r_cols[5].markdown(f"<div class='row-text'>{comm_date}</div>", unsafe_allow_html=True)
         
         r_cols[6].markdown(f"<div class='row-text'>{r.get('Status','')}</div>", unsafe_allow_html=True)
         
-        # Onboarded Date (Column 10 in Sheets)
-        r_cols[7].markdown(f"<div class='row-text'>{r.get('Onboarded Date','')}</div>", unsafe_allow_html=True)
+        onb_date = r.get('Onboarded Date') if r.get('Onboarded Date') else ""
+        r_cols[7].markdown(f"<div class='row-text'>{onb_date}</div>", unsafe_allow_html=True)
         
-        r_cols[8].markdown(f"<div class='row-text'>{r.get('SR Date','')}</div>", unsafe_allow_html=True)
+        sr_date = r.get('SR Date') if r.get('SR Date') else ""
+        r_cols[8].markdown(f"<div class='row-text'>{sr_date}</div>", unsafe_allow_html=True)
+        
         r_cols[9].markdown(f"<div class='row-text'>{r.get('HR Name','')}</div>", unsafe_allow_html=True)
         
         if r_cols[10].button("📝", key=f"e_{r['Reference_ID']}"): edit_candidate(r)
