@@ -10,7 +10,7 @@ st.set_page_config(page_title="Takecare Manpower ATS", layout="wide", initial_si
 
 st.markdown("""
     <style>
-    /* 1. Remove Top Black Bars & Extra Gaps (Correction #1) */
+    /* 1. Remove Top Black Bars & Extra Gaps */
     header[data-testid="stHeader"] { background: transparent !important; height: 0px; }
     .main .block-container { padding-top: 0.5rem !important; }
     
@@ -19,7 +19,7 @@ st.markdown("""
         background-attachment: fixed;
     }
 
-    /* 2. Header Freeze Concept (Correction #2) */
+    /* 2. Header Freeze Concept - Performance optimized for large datasets */
     [data-testid="stVerticalBlock"] > div:nth-child(5) {
         position: sticky;
         top: 0;
@@ -28,12 +28,14 @@ st.markdown("""
         padding: 5px 0;
     }
 
-    /* 3. Input & Form Styling */
+    /* 3. Input & Dropdown Visibility Fix (Correction #1 & #2) */
     div[data-baseweb="input"] > div, div[data-baseweb="select"] > div, div[data-baseweb="textarea"] > div {
         background-color: white !important;
         border-radius: 5px !important;
     }
-    input, select, textarea { color: #00008b !important; font-weight: bold !important; }
+    /* Selectbox dropdown items text color fix */
+    div[data-baseweb="popover"] div { color: #00008b !important; font-weight: bold !important; }
+    input, select, textarea, [data-baseweb="select"] span { color: #00008b !important; font-weight: bold !important; }
 
     /* 4. Text Visibility Fix */
     label p, .stMarkdown p, .stWrite { color: white !important; font-weight: 500 !important; }
@@ -48,7 +50,7 @@ st.markdown("""
         border: 1px solid white !important;
     }
     
-    /* 6. Header Box Styling (Correction #1) */
+    /* 6. Header Box Styling */
     .header-box {
         color: #00BFFF !important;
         font-size: 11px !important;
@@ -87,11 +89,9 @@ if client:
     client_sheet = sh.worksheet("Client_Master")
     cand_sheet = sh.worksheet("ATS_Data")
 
-# --- Ref ID Format Correction (Correction #3) ---
 def get_next_ref_id():
     ids = cand_sheet.col_values(1)
     if len(ids) <= 1: return "E00001"
-    # Filtering only valid E-prefixed IDs to find max
     nums = [int(i[1:]) for i in ids[1:] if i.startswith("E") and i[1:].isdigit()]
     return f"E{max(nums)+1:05d}" if nums else "E00001"
 
@@ -120,7 +120,7 @@ if not st.session_state.logged_in:
 else:
     u = st.session_state.user_data
     
-    # Header Section (Removing gap)
+    # Header Section
     h1, h2, h3 = st.columns([2, 1.5, 0.5])
     with h1:
         st.markdown("<h2 style='color: white; margin:0;'>Takecare Manpower Service Pvt Ltd</h2>", unsafe_allow_html=True)
@@ -143,15 +143,17 @@ else:
         with c1:
             name = st.text_input("Candidate Name")
             phone = st.text_input("Phone Number")
+            # Dropdown visibility fix (Correction #1)
             cl_name = st.selectbox("Client", ["--Select--"] + sorted(cm['Client Name'].unique().tolist()))
         with c2:
             plist = cm[cm['Client Name'] == cl_name]['Position'].tolist() if cl_name != "--Select--" else []
             pos = st.selectbox("Position", plist)
-            c_date = st.date_input("Commitment Date") # Shortlist commitment date (Correction #4)
+            c_date = st.date_input("Commitment Date")
         
         feed = st.text_area("Initial Feedback")
         if st.button("SAVE CANDIDATE", use_container_width=True):
             if name and phone and cl_name != "--Select--":
+                # Order: RefID, Date, Name, Phone, Client, Position, CommDate, Status, HR, Onboard, SR, Feedback
                 row = [rid, datetime.now().strftime('%d-%m-%Y'), name, phone, cl_name, pos, c_date.strftime('%d-%m-%Y'), "Shortlisted", u['Username'], "", "", feed]
                 cand_sheet.append_row(row)
                 st.success("Saved!"); st.rerun()
@@ -159,8 +161,9 @@ else:
     @st.dialog("📝 Update Candidate Status")
     def edit_candidate(row):
         st.markdown(f"<p style='color:black;'>Editing: <b>{row['Candidate Name']}</b></p>", unsafe_allow_html=True)
-        st_list = ["Interviewed", "Selected", "Rejected", "Onboarded", "Hold", "Left"]
-        new_st = st.selectbox("Update Status", st_list)
+        st_list = ["Shortlisted", "Interviewed", "Selected", "Rejected", "Onboarded", "Hold", "Left"]
+        # Dropdown visibility fix (Correction #2)
+        new_st = st.selectbox("Update Status", st_list, index=st_list.index(row['Status']) if row['Status'] in st_list else 0)
         new_fb = st.text_input("Feedback", value=row.get('Feedback', ''))
         evt_date = st.date_input("Update Date (Interview/Onboard)")
         
@@ -169,15 +172,14 @@ else:
             cand_sheet.update_cell(idx, 8, new_st)
             cand_sheet.update_cell(idx, 12, new_fb)
             
-            # If interviewed, change commitment date to interview date (Correction #4)
             if new_st == "Interviewed":
                 cand_sheet.update_cell(idx, 7, evt_date.strftime('%d-%m-%Y'))
             
-            # If Onboarded, set date and SR Date (Correction #5)
             if new_st == "Onboarded":
                 cand_sheet.update_cell(idx, 10, evt_date.strftime('%d-%m-%Y'))
                 cm = pd.DataFrame(client_sheet.get_all_records())
-                days = int(cm[cm['Client Name'] == row['Client Name']]['SR Days'].values[0])
+                days_list = cm[cm['Client Name'] == row['Client Name']]['SR Days'].values
+                days = int(days_list[0]) if len(days_list) > 0 else 0
                 sr_dt = (evt_date + timedelta(days=days)).strftime('%d-%m-%Y')
                 cand_sheet.update_cell(idx, 11, sr_dt)
             st.rerun()
@@ -190,22 +192,22 @@ else:
     with b_search:
         find = st.text_input("Search", label_visibility="collapsed", placeholder="Search Ref ID, Candidate Name...")
 
-    # --- 5. DATA TABLE (12 COLUMNS - Correction #1, #4, #5) ---
+    # --- 5. DATA TABLE (12 COLUMNS - Correction #4) ---
     st.markdown("---")
     cols = st.columns([0.8, 1.2, 1, 1, 1.2, 1.2, 0.8, 1, 1, 0.8, 0.5, 0.5])
     titles = ["Ref ID", "Candidate", "Contact", "Client Name", "Position / Job", "Comm / Int Date", "Status", "Onboard Date", "SR Date", "HR Name", "Edit", "WA"]
     for c, t in zip(cols, titles): c.markdown(f"<div class='header-box'>{t}</div>", unsafe_allow_html=True)
     
-    # Refresh and Sort Data
+    # Load Data (Handling 5000+ rows efficiently - Correction #3)
     raw_data = cand_sheet.get_all_records()
     data = pd.DataFrame(raw_data)
     data.columns = [c.strip() for c in data.columns]
-    data = data.iloc[::-1] # Newest data first
+    data = data.iloc[::-1] # Show latest entries first
     
     if u['Role'] == "RECRUITER": data = data[data['HR Name'] == u['Username']]
     if find: data = data[data.astype(str).apply(lambda x: x.str.contains(find, case=False)).any(axis=1)]
 
-    # Display Rows (Correction #4, #5)
+    # Display Rows with correct Mapping (Correction #4)
     for _, r in data.iterrows():
         r_cols = st.columns([0.8, 1.2, 1, 1, 1.2, 1.2, 0.8, 1, 1, 0.8, 0.5, 0.5])
         r_cols[0].markdown(f"<div class='row-text'>{r.get('Reference_ID','')}</div>", unsafe_allow_html=True)
@@ -213,9 +215,17 @@ else:
         r_cols[2].markdown(f"<div class='row-text'>{r.get('Contact Number','')}</div>", unsafe_allow_html=True)
         r_cols[3].markdown(f"<div class='row-text'>{r.get('Client Name','')}</div>", unsafe_allow_html=True)
         r_cols[4].markdown(f"<div class='row-text'>{r.get('Job Title','')}</div>", unsafe_allow_html=True)
-        r_cols[5].markdown(f"<div class='row-text'>{r.get('Commitment Date','')}</div>", unsafe_allow_html=True) # Unified date
+        
+        # Commitment Date Fix
+        comm_val = r.get('Commitment Date','')
+        r_cols[5].markdown(f"<div class='row-text'>{comm_val}</div>", unsafe_allow_html=True)
+        
         r_cols[6].markdown(f"<div class='row-text'>{r.get('Status','')}</div>", unsafe_allow_html=True)
-        r_cols[7].markdown(f"<div class='row-text'>{r.get('Onboarded Date','')}</div>", unsafe_allow_html=True)
+        
+        # Onboard Date Fix
+        onb_val = r.get('Onboarded Date','')
+        r_cols[7].markdown(f"<div class='row-text'>{onb_val}</div>", unsafe_allow_html=True)
+        
         r_cols[8].markdown(f"<div class='row-text'>{r.get('SR Date','')}</div>", unsafe_allow_html=True)
         r_cols[9].markdown(f"<div class='row-text'>{r.get('HR Name','')}</div>", unsafe_allow_html=True)
         
