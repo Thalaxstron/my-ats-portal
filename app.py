@@ -145,79 +145,72 @@ else:
     with b_search:
         find = st.text_input("Search", label_visibility="collapsed", placeholder="Search Ref ID, Candidate Name...")
 
-    # --- 5. DATA TABLE & AUTO-DELETION LOGIC (APP ONLY) ---
+    # --- 5. DATA TABLE & SMART AUTO-DELETION LOGIC ---
     st.markdown("---")
     cols = st.columns([0.8, 1.2, 1, 1, 1.2, 1.2, 0.8, 1, 1, 0.8, 0.5, 0.5])
     titles = ["Ref ID", "Candidate", "Contact", "Client Name", "Position / Job", "Comm / Int Date", "Status", "Onboard Date", "SR Date", "HR Name", "Edit", "WA"]
     for c, t in zip(cols, titles): c.markdown(f"<div class='header-box'>{t}</div>", unsafe_allow_html=True)
     
-    # FETCH DATA
-    raw_data = cand_sheet.get_all_records()
-    data = pd.DataFrame(raw_data)
-    
-    # 1. KEYERROR FIX: Clean column names
+    data = pd.DataFrame(cand_sheet.get_all_records())
     data.columns = data.columns.str.strip()
 
     if not data.empty and 'Date' in data.columns:
-        # 2. AUTO-DELETION LOGIC (Filters view, doesn't delete from Sheet)
         data['EntryDate_dt'] = pd.to_datetime(data['Date'], format='%d-%m-%Y', errors='coerce')
         now = datetime.now()
 
-        def should_keep(row):
+        def smart_auto_delete(row):
             status = str(row['Status'])
             dt = row['EntryDate_dt']
             if pd.isnull(dt): return True
             days_diff = (now - dt).days
             
-            if status in ["Onboarded", "Project Success"]: return True
+            # Logic 1: Shortlisted > 7 days hide
             if status == "Shortlisted" and days_diff > 7: return False
+            # Logic 2: Interviewed, Selected, Hold > 30 days hide
             if status in ["Interviewed", "Selected", "Hold"] and days_diff > 30: return False
+            # Logic 3: Rejected, Left > 2 days hide
             if status in ["Rejected", "Left"] and days_diff > 2: return False
+            # Logic 4: Onboarded / Project Success always keep
             return True
 
-        data = data[data.apply(should_keep, axis=1)]
+        # Apply filtering (Only in App, GSheet stays intact)
+        data = data[data.apply(smart_auto_delete, axis=1)]
         data = data.drop(columns=['EntryDate_dt'])
 
-    data = data.iloc[::-1] # Latest entries on top
-    
-    # User Permissions & Search
+    data = data.iloc[::-1]
     if curr_user['Role'] == "RECRUITER": data = data[data['HR Name'] == curr_user['Username']]
     if find: data = data[data.astype(str).apply(lambda x: x.str.contains(find, case=False)).any(axis=1)]
 
-    # Client Data for WA Message
     clients_df = pd.DataFrame(client_sheet.get_all_records())
     clients_df.columns = clients_df.columns.str.strip()
 
     for _, r in data.iterrows():
         r_cols = st.columns([0.8, 1.2, 1, 1, 1.2, 1.2, 0.8, 1, 1, 0.8, 0.5, 0.5])
-        
-        # Mapping row data to columns
         fields = ['Reference_ID', 'Candidate Name', 'Contact Number', 'Client Name', 'Job Title', 'Interview Date', 'Status', 'Joining Date', 'SR Date', 'HR Name']
         for idx, field in enumerate(fields):
             r_cols[idx].markdown(f"<div class='row-text'>{r.get(field,'')}</div>", unsafe_allow_html=True)
         
-        # Edit Button
         if r_cols[10].button("📝", key=f"e_{r['Reference_ID']}"): edit_candidate(r)
         
-        # 3. WHATSAPP PROFESSIONAL FORMAT
+        # 5. WHATSAPP FORMAT UPDATE
         if r_cols[11].button("📲", key=f"w_{r['Reference_ID']}"):
             c_info = clients_df[clients_df['Client Name'] == r['Client Name']]
             c_addr = c_info.iloc[0].get('Address', 'N/A') if not c_info.empty else "N/A"
             c_map = c_info.iloc[0].get('Map Link', '') if not c_info.empty else ""
-            c_person = c_info.iloc[0].get('Contact Person', 'HR Manager') if not c_info.empty else "HR Manager"
+            c_person = c_info.iloc[0].get('Contact Person', 'HR Dept') if not c_info.empty else "HR Dept"
 
-            msg = (f"Dear *{r.get('Candidate Name')}*,\n\n"
-                   "Congratulations! 🎊 You have been invited for a Direct Interview.\n\n"
-                   "*Interview Details:*\n"
-                   f"📍 *Company:* {r.get('Client Name')}\n"
-                   f"💼 *Position:* {r.get('Job Title')}\n"
-                   f"📅 *Date:* {r.get('Interview Date')}\n"
-                   f"🕙 *Time:* 10:30 AM\n\n"
-                   f"📌 *Address:* {c_addr}\n"
-                   f"🗺️ *Map:* {c_map}\n"
-                   f"👤 *Contact Person:* {c_person}\n\n"
-                   "Please carry your updated Resume and ID proof.\n\n"
-                   f"Regards,\n*{curr_user['Username']}*\nTakecare Manpower Services Pvt Ltd")
+            msg = (f"Dear {r.get('Candidate Name')},\n\n"
+                   "Congratulations! We invite you for a Direct Interview.\n\n"
+                   "Reference: Takecare Manpower Services Pvt Ltd\n"
+                   f"Position: {r.get('Job Title')}\n"
+                   f"Interview Date: {r.get('Interview Date')}\n"
+                   "Interview Time: 10:30 AM\n"
+                   f"Address: {c_addr}\n"
+                   f"Map Link: {c_map}\n"
+                   f"Contact Person: {c_person}\n\n"
+                   "Regards,\n"
+                   f"{curr_user['Username']}\n"
+                   "Takecare HR Team")
             
             wa_url = f"https://api.whatsapp.com/send?phone=91{r['Contact Number']}&text={urllib.parse.quote(msg)}"
             st.markdown(f'<a href="{wa_url}" target="_blank" style="text-decoration:none;"><button style="background-color:#25D366; color:white; border:none; padding:8px; border-radius:5px; width:100%; font-weight:bold; cursor:pointer;">OPEN WA</button></a>', unsafe_allow_html=True)
