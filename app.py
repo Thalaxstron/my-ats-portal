@@ -158,7 +158,6 @@ else:
     if curr_user['Role'] == "RECRUITER": data = data[data['HR Name'] == curr_user['Username']]
     if find: data = data[data.astype(str).apply(lambda x: x.str.contains(find, case=False)).any(axis=1)]
 
-    # Fetch and sanitize Client Master columns
     clients_df = pd.DataFrame(client_sheet.get_all_records())
     clients_df.columns = [c.strip() for c in clients_df.columns]
 
@@ -181,21 +180,21 @@ else:
         if r_cols[11].button("📲", key=f"w_{r['Reference_ID']}"):
             c_info = clients_df[clients_df['Client Name'] == r['Client Name']]
             
-            # SAFE DATA EXTRACTION - Error fixed here
             if not c_info.empty:
-                # Use .get() to avoid KeyError if column name is slightly different
                 c_addr = c_info.iloc[0].get('Address', 'Address Not Found')
                 c_map = c_info.iloc[0].get('Map Link', '')
                 c_person = c_info.iloc[0].get('Contact Person', 'HR Department')
             else:
                 c_addr, c_map, c_person = "Address Not Found", "", "HR Department"
 
+            # CLEANED MESSAGE FORMAT
             msg = (
                 f"Dear {r.get('Candidate Name', 'Candidate')},\n\n"
                 "Congratulations! We invite you for a Direct Interview.\n\n"
                 "Reference: Takecare Manpower Services Pvt Ltd\n"
                 f"Position: {r.get('Job Title', 'Staff')}\n"
                 f"Interview Date: {r.get('Interview Date', 'TBA')}\n"
+                "Interview Time: 10:30 AM\n"
                 f"Address: {c_addr}\n"
                 f"Map Link: {c_map}\n"
                 f"Contact Person: {c_person}\n\n"
