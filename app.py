@@ -5,7 +5,7 @@ from google.oauth2.service_account import Credentials
 import urllib.parse
 from datetime import datetime, timedelta
 
-# --- 1. PAGE CONFIG & UI STYLING ---
+# --- 1. PAGE CONFIG & ADVANCED UI STYLING ---
 st.set_page_config(page_title="Takecare Manpower ATS", layout="wide", initial_sidebar_state="collapsed")
 
 st.markdown("""
@@ -60,11 +60,11 @@ if not st.session_state.logged_in:
     with col_m:
         st.markdown("<div style='background: rgba(255,255,255,0.1); padding: 20px; border-radius: 15px;'>", unsafe_allow_html=True)
         with st.form("login"):
-            u_input = st.text_input("Email ID")
-            p_input = st.text_input("Password", type="password")
+            u_mail = st.text_input("Email ID")
+            p_pass = st.text_input("Password", type="password")
             if st.form_submit_button("ATS LOGIN", use_container_width=True):
                 udf = pd.DataFrame(user_sheet.get_all_records())
-                match = udf[(udf['Mail_ID'] == u_input) & (udf['Password'].astype(str) == p_input)]
+                match = udf[(udf['Mail_ID'] == u_mail) & (udf['Password'].astype(str) == p_pass)]
                 if not match.empty:
                     st.session_state.logged_in = True
                     st.session_state.user_data = match.iloc[0].to_dict()
@@ -74,7 +74,7 @@ if not st.session_state.logged_in:
 
 # --- 4. MAIN DASHBOARD ---
 else:
-    u = st.session_state.user_data
+    curr_user = st.session_state.user_data
     
     # Header
     h1, h2, h3 = st.columns([2, 1.5, 0.5])
@@ -82,7 +82,7 @@ else:
         st.markdown("<h2 style='color: white; margin:0;'>Takecare Manpower Service Pvt Ltd</h2>", unsafe_allow_html=True)
         st.markdown("<p class='slogan'>Successful HR Firm</p>", unsafe_allow_html=True)
     with h2:
-        st.markdown(f"<p style='color: white; font-size: 18px; margin-bottom:0;'>Welcome, <b>{u['Username']}</b></p>", unsafe_allow_html=True)
+        st.markdown(f"<p style='color: white; font-size: 18px; margin-bottom:0;'>Welcome, <b>{curr_user['Username']}</b></p>", unsafe_allow_html=True)
         st.markdown("<p style='color: #00FF00; font-size:13px;'>Target: 80+ Calls / 3-5 Interview / 1+ Joining</p>", unsafe_allow_html=True)
     with h3:
         if st.button("Logout"): st.session_state.logged_in = False; st.rerun()
@@ -93,21 +93,21 @@ else:
     def add_shortlist():
         rid = get_next_ref_id()
         st.markdown(f"<p style='color:black;'><b>Ref ID:</b> {rid} | <b>Date:</b> {datetime.now().strftime('%d-%m-%Y')}</p>", unsafe_allow_html=True)
-        cm_data = pd.DataFrame(client_sheet.get_all_records())
+        cm_df = pd.DataFrame(client_sheet.get_all_records())
         c1, c2 = st.columns(2)
         with c1:
             name = st.text_input("Candidate Name")
             phone = st.text_input("Phone Number")
-            cl_name = st.selectbox("Client", ["--Select--"] + sorted(cm_data['Client Name'].unique().tolist()))
+            cl_name = st.selectbox("Client", ["--Select--"] + sorted(cm_df['Client Name'].unique().tolist()))
         with c2:
-            plist = cm_data[cm_data['Client Name'] == cl_name]['Position'].tolist() if cl_name != "--Select--" else []
+            plist = cm_df[cm_df['Client Name'] == cl_name]['Position'].tolist() if cl_name != "--Select--" else []
             pos = st.selectbox("Position", plist)
             c_date = st.date_input("Commitment Date")
         
         feed = st.text_area("Initial Feedback")
         if st.button("SAVE CANDIDATE", use_container_width=True):
             if name and phone and cl_name != "--Select--":
-                row = [rid, datetime.now().strftime('%d-%m-%Y'), name, phone, cl_name, pos, c_date.strftime('%d-%m-%Y'), "Shortlisted", u['Username'], "", "", feed]
+                row = [rid, datetime.now().strftime('%d-%m-%Y'), name, phone, cl_name, pos, c_date.strftime('%d-%m-%Y'), "Shortlisted", curr_user['Username'], "", "", feed]
                 cand_sheet.append_row(row)
                 st.success("Saved!"); st.rerun()
 
@@ -115,22 +115,22 @@ else:
     def edit_candidate(row):
         st.markdown(f"<p style='color:black;'>Editing: <b>{row['Candidate Name']}</b></p>", unsafe_allow_html=True)
         st_list = ["Shortlisted", "Interviewed", "Selected", "Rejected", "Onboarded", "Hold", "Left"]
-        curr_status = str(row.get('Status', 'Shortlisted'))
-        idx_status = st_list.index(curr_status) if curr_status in st_list else 0
-        new_st = st.selectbox("Update Status", st_list, index=idx_status)
+        curr_st = str(row.get('Status', 'Shortlisted'))
+        idx_st = st_list.index(curr_st) if curr_st in st_list else 0
+        new_st = st.selectbox("Update Status", st_list, index=idx_st)
         new_fb = st.text_input("Feedback", value=row.get('Feedback', ''))
         evt_date = st.date_input("Date (Interview/Onboard)")
         
         if st.button("UPDATE DATA", use_container_width=True):
             idx = cand_sheet.find(row['Reference_ID']).row
-            cand_sheet.update_cell(idx, 8, new_st)
+            cand_sheet.update_cell(idx, 8, new_st) 
             cand_sheet.update_cell(idx, 12, new_fb)
             if new_st == "Interviewed":
                 cand_sheet.update_cell(idx, 7, evt_date.strftime('%d-%m-%Y'))
             if new_st == "Onboarded":
                 cand_sheet.update_cell(idx, 10, evt_date.strftime('%d-%m-%Y'))
-                cm_df = pd.DataFrame(client_sheet.get_all_records())
-                days_val = cm_df[cm_df['Client Name'] == row['Client Name']]['SR Days'].values
+                cm_data = pd.DataFrame(client_sheet.get_all_records())
+                days_val = cm_data[cm_data['Client Name'] == row['Client Name']]['SR Days'].values
                 days = int(days_val[0]) if len(days_val) > 0 else 0
                 sr_dt = (evt_date + timedelta(days=days)).strftime('%d-%m-%Y')
                 cand_sheet.update_cell(idx, 11, sr_dt)
@@ -151,11 +151,11 @@ else:
     data.columns = [c.strip() for c in data.columns]
     data = data.iloc[::-1] 
     
-    if u['Role'] == "RECRUITER": data = data[data['HR Name'] == u['Username']]
+    if curr_user['Role'] == "RECRUITER": data = data[data['HR Name'] == curr_user['Username']]
     if find: data = data[data.astype(str).apply(lambda x: x.str.contains(find, case=False)).any(axis=1)]
 
-    # Fetch Client Master once to avoid multiple API calls in loop
-    cm_df = pd.DataFrame(client_sheet.get_all_records())
+    # Cache Client Data for fast WhatsApp Invite Lookups
+    clients_df = pd.DataFrame(client_sheet.get_all_records())
 
     for _, r in data.iterrows():
         r_cols = st.columns([0.8, 1.2, 1, 1, 1.2, 1.2, 0.8, 1, 1, 0.8, 0.5, 0.5])
@@ -172,31 +172,27 @@ else:
         
         if r_cols[10].button("📝", key=f"e_{r['Reference_ID']}"): edit_candidate(r)
         
-        # --- WHATSAPP INVITE LOGIC ---
+        # --- WHATSAPP DYNAMIC INVITE ---
         if r_cols[11].button("📲", key=f"w_{r['Reference_ID']}"):
-            # Client details filter
-            client_info = cm_df[cm_df['Client Name'] == r['Client Name']]
-            if not client_info.empty:
-                address = client_info.iloc[0]['Address']
-                map_link = client_info.iloc[0]['Map Link']
-                contact_person = client_info.iloc[0]['Contact Person']
-            else:
-                address = "N/A"; map_link = "N/A"; contact_person = "N/A"
+            # Fetch specific client details from Client_Master
+            c_info = clients_df[clients_df['Client Name'] == r['Client Name']]
+            c_addr = c_info.iloc[0]['Address'] if not c_info.empty else "Address Not Found"
+            c_map = c_info.iloc[0]['Map Link'] if not c_info.empty else ""
+            c_person = c_info.iloc[0]['Contact Person'] if not c_info.empty else "HR Department"
 
-            # Message Formatting
             msg = (
                 f"Dear {r['Candidate Name']},\n\n"
                 "Congratulations! We invite you for a Direct Interview.\n\n"
                 "Reference: Takecare Manpower Services Pvt Ltd\n"
                 f"Position: {r['Job Title']}\n"
                 f"Interview Date: {r['Interview Date']}\n"
-                f"Address: {address}\n"
-                f"Map Link: {map_link}\n"
-                f"Contact Person: {contact_person}\n\n"
+                f"Address: {c_addr}\n"
+                f"Map Link: {c_map}\n"
+                f"Contact Person: {c_person}\n\n"
                 "Regards,\n"
-                f"{u['Username']}\n"
+                f"{curr_user['Username']}\n"
                 "Takecare HR Team"
             )
             
             wa_url = f"https://api.whatsapp.com/send?phone=91{r['Contact Number']}&text={urllib.parse.quote(msg)}"
-            st.link_button("OPEN WHATSAPP", wa_url)
+            st.link_button("SEND INVITE", wa_url)
