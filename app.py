@@ -145,74 +145,82 @@ else:
     with b_search:
         find = st.text_input("Search", label_visibility="collapsed", placeholder="Search Ref ID, Candidate Name...")
 
-    # --- 5. DATA TABLE & AUTO-DELETION LOGIC (SCENARIO BASED) ---
+    # --- 5. DATA TABLE & ROBUST AUTO-DELETION ---
     st.markdown("---")
     cols = st.columns([0.8, 1.2, 1, 1, 1.2, 1.2, 0.8, 1, 1, 0.8, 0.5, 0.5])
     titles = ["Ref ID", "Candidate", "Contact", "Client Name", "Position / Job", "Comm / Int Date", "Status", "Onboard Date", "SR Date", "HR Name", "Edit", "WA"]
     for c, t in zip(cols, titles): c.markdown(f"<div class='header-box'>{t}</div>", unsafe_allow_html=True)
     
-    data = pd.DataFrame(cand_sheet.get_all_records())
-    data.columns = data.columns.str.strip()
+    raw_data = cand_sheet.get_all_records()
+    data = pd.DataFrame(raw_data)
+    
+    # CRITICAL: Strip spaces from column names to prevent KeyError
+    data.columns = [str(c).strip() for c in data.columns]
 
     if not data.empty:
         now = datetime.now()
 
         def apply_scenarios(row):
-            status = str(row['Status'])
-            # Parse dates safely
-            entry_dt = pd.to_datetime(row['Date'], format='%d-%m-%Y', errors='coerce')
-            int_dt = pd.to_datetime(row['Interview Date'], format='%d-%m-%Y', errors='coerce')
-            onboard_dt = pd.to_datetime(row['Joining Date'], format='%d-%m-%Y', errors='coerce')
+            # Safe data extraction
+            status = str(row.get('Status', ''))
+            e_date_str = str(row.get('Date', ''))
+            i_date_str = str(row.get('Interview Date', ''))
+            
+            entry_dt = pd.to_datetime(e_date_str, format='%d-%m-%Y', errors='coerce')
+            int_dt = pd.to_datetime(i_date_str, format='%d-%m-%Y', errors='coerce')
 
-            # SCENARIO 1: Shortlisted - Check from Entry Date (7 Days)
+            # SCENARIO 1: Shortlisted (7 Days from Entry Date)
             if status == "Shortlisted":
                 if pd.notnull(entry_dt) and (now - entry_dt).days > 7: return False
             
-            # SCENARIO 2: Selected/Hold - Check from Interview Date (30 Days)
+            # SCENARIO 2: Interviewed/Selected/Hold (30 Days from Interview Date)
             if status in ["Selected", "Hold", "Interviewed"]:
-                if pd.notnull(int_dt) and (now - int_dt).days > 30: return False
+                if pd.notnull(int_dt):
+                    if (now - int_dt).days > 30: return False
+                elif pd.notnull(entry_dt) and (now - entry_dt).days > 30: 
+                    return False # Fallback to entry date if interview date missing
 
-            # SCENARIO 3: Left - Immediate Hide based on Onboard date
-            if status == "Left": return False
+            # SCENARIO 3 & 4: Left / Rejected (Immediate Hide)
+            if status in ["Left", "Rejected"]: return False
 
-            # SCENARIO 4: Rejected - Immediate Hide based on Interview
-            if status == "Rejected": return False
-
-            # Project Success - Never Delete
+            # Project Success - Always Keep
             if status == "Project Success": return True
 
             return True
 
-        # Run the filter
-        data = data[data.apply(apply_scenarios, axis=1)]
+        # Run safe filtering
+        try:
+            data = data[data.apply(apply_scenarios, axis=1)]
+        except Exception as filter_err:
+            st.warning(f"Filtering Pause: {filter_err}")
 
-    data = data.iloc[::-1] # Show latest entries first
+    data = data.iloc[::-1] 
     if curr_user['Role'] == "RECRUITER": data = data[data['HR Name'] == curr_user['Username']]
     if find: data = data[data.astype(str).apply(lambda x: x.str.contains(find, case=False)).any(axis=1)]
 
-    # Fetch Client info for WA
     clients_df = pd.DataFrame(client_sheet.get_all_records())
-    clients_df.columns = clients_df.columns.str.strip()
+    clients_df.columns = [str(c).strip() for c in clients_df.columns]
 
     for _, r in data.iterrows():
         r_cols = st.columns([0.8, 1.2, 1, 1, 1.2, 1.2, 0.8, 1, 1, 0.8, 0.5, 0.5])
-        fields = ['Reference_ID', 'Candidate Name', 'Contact Number', 'Client Name', 'Job Title', 'Interview Date', 'Status', 'Joining Date', 'SR Date', 'HR Name']
-        for idx, field in enumerate(fields):
+        # Use .get() for safety
+        field_map = ['Reference_ID', 'Candidate Name', 'Contact Number', 'Client Name', 'Job Title', 'Interview Date', 'Status', 'Joining Date', 'SR Date', 'HR Name']
+        for idx, field in enumerate(field_map):
             r_cols[idx].markdown(f"<div class='row-text'>{r.get(field,'')}</div>", unsafe_allow_html=True)
         
-        if r_cols[10].button("📝", key=f"e_{r['Reference_ID']}"): edit_candidate(r)
+        if r_cols[10].button("📝", key=f"e_{r.get('Reference_ID','NA')}"): edit_candidate(r)
         
-        if r_cols[11].button("📲", key=f"w_{r['Reference_ID']}"):
-            c_info = clients_df[clients_df['Client Name'] == r['Client Name']]
+        if r_cols[11].button("📲", key=f"w_{r.get('Reference_ID','NA')}"):
+            c_info = clients_df[clients_df['Client Name'] == r.get('Client Name')]
             c_addr = c_info.iloc[0].get('Address', 'N/A') if not c_info.empty else "N/A"
             c_map = c_info.iloc[0].get('Map Link', 'N/A') if not c_info.empty else "N/A"
-            c_person = c_info.iloc[0].get('Contact Person', 'HR Manager') if not c_info.empty else "HR Manager"
+            c_person = c_info.iloc[0].get('Contact Person', 'HR Dept') if not c_info.empty else "HR Dept"
 
-            msg = (f"Dear {r.get('Candidate Name')},\n\n"
+            msg = (f"Dear {r.get('Candidate Name', 'Candidate')},\n\n"
                    "Congratulations! We invite you for a Direct Interview.\n\n"
                    "Reference: Takecare Manpower Services Pvt Ltd\n"
-                   f"Position: {r.get('Job Title')}\n"
-                   f"Interview Date: {r.get('Interview Date')}\n"
+                   f"Position: {r.get('Job Title', 'Officer')}\n"
+                   f"Interview Date: {r.get('Interview Date', 'TBA')}\n"
                    "Interview Time: 10:30 AM\n"
                    f"Address: {c_addr}\n"
                    f"Map Link: {c_map}\n"
@@ -221,5 +229,5 @@ else:
                    f"{curr_user['Username']}\n"
                    "Takecare HR Team")
             
-            wa_url = f"https://api.whatsapp.com/send?phone=91{r['Contact Number']}&text={urllib.parse.quote(msg)}"
+            wa_url = f"https://api.whatsapp.com/send?phone=91{r.get('Contact Number','')}&text={urllib.parse.quote(msg)}"
             st.markdown(f'<a href="{wa_url}" target="_blank" style="text-decoration:none;"><button style="background-color:#25D366; color:white; border:none; padding:8px; border-radius:5px; width:100%; font-weight:bold; cursor:pointer;">OPEN WA</button></a>', unsafe_allow_html=True)
