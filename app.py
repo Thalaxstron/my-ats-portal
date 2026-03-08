@@ -87,7 +87,7 @@ else:
     with h3:
         if st.button("Logout"): st.session_state.logged_in = False; st.rerun()
 
-    # Dashboard Actions Row
+    # Dashboard Actions
     b1, b2, b3, b_search = st.columns([0.8, 0.8, 1.2, 2.5])
     
     @st.dialog("➕ New Candidate Shortlist")
@@ -108,6 +108,7 @@ else:
         feed = st.text_area("Initial Feedback")
         if st.button("SAVE CANDIDATE", use_container_width=True):
             if name and phone and cl_name != "--Select--":
+                # Entry row: RefID, EntryDate, Name, Phone, Client, Position, CommitmentDate, Status, HRName, OnboardDate, SRDate, Feedback
                 row = [rid, datetime.now().strftime('%d-%m-%Y'), name, phone, cl_name, pos, c_date.strftime('%d-%m-%Y'), "Shortlisted", curr_user['Username'], "", "", feed]
                 cand_sheet.append_row(row)
                 st.success("Saved!"); st.rerun()
@@ -115,7 +116,7 @@ else:
     @st.dialog("📝 Update Candidate Status")
     def edit_candidate(row):
         st.markdown(f"<p style='color:black;'>Editing: <b>{row['Candidate Name']}</b></p>", unsafe_allow_html=True)
-        st_list = ["Shortlisted", "Interviewed", "Selected", "Rejected", "Onboarded", "Hold", "Left"]
+        st_list = ["Shortlisted", "Interviewed", "Selected", "Rejected", "Onboarded", "Hold", "Left", "Project Success"]
         curr_st = str(row.get('Status', 'Shortlisted'))
         idx_st = st_list.index(curr_st) if curr_st in st_list else 0
         new_st = st.selectbox("Update Status", st_list, index=idx_st)
@@ -137,15 +138,12 @@ else:
                 cand_sheet.update_cell(idx, 11, sr_dt)
             st.rerun()
 
-    with b1: st.button("🔍 Search")
-    with b2: 
-        if curr_user['Role'] in ['ADMIN', 'TL']: st.button("⚡ Filter")
     with b3:
         if st.button("➕ New Shortlist"): add_shortlist()
     with b_search:
         find = st.text_input("Search", label_visibility="collapsed", placeholder="Search Ref ID, Candidate Name...")
 
-    # --- 5. DATA TABLE ---
+    # --- 5. DATA TABLE WITH AUTO-DELETION (FILTERING) LOGIC ---
     st.markdown("---")
     cols = st.columns([0.8, 1.2, 1, 1, 1.2, 1.2, 0.8, 1, 1, 0.8, 0.5, 0.5])
     titles = ["Ref ID", "Candidate", "Contact", "Client Name", "Position / Job", "Comm / Int Date", "Status", "Onboard Date", "SR Date", "HR Name", "Edit", "WA"]
@@ -153,13 +151,38 @@ else:
     
     data = pd.DataFrame(cand_sheet.get_all_records())
     data.columns = [c.strip() for c in data.columns]
-    data = data.iloc[::-1] 
+
+    if not data.empty:
+        # Convert Date to datetime for calculations
+        data['EntryDate_dt'] = pd.to_datetime(data['Date'], format='%d-%m-%Y', errors='coerce')
+        now = datetime.now()
+
+        def should_show(row):
+            status = str(row['Status'])
+            entry_date = row['EntryDate_dt']
+            if pd.isnull(entry_date): return True
+            
+            # Logic 5: Onboarded and Project Success always stay
+            if status in ["Onboarded", "Project Success"]: return True
+            # Logic 1: Shortlisted > 7 days hide
+            if status == "Shortlisted" and (now - entry_date).days > 7: return False
+            # Logic 2: Interviewed, Selected, Hold > 30 days hide
+            if status in ["Interviewed", "Selected", "Hold"] and (now - entry_date).days > 30: return False
+            # Logic 3: Rejected, Left > 2 days hide
+            if status in ["Rejected", "Left"] and (now - entry_date).days > 2: return False
+            
+            return True
+
+        # Apply the smart filter
+        data = data[data.apply(should_show, axis=1)]
+        data = data.drop(columns=['EntryDate_dt'])
+
+    data = data.iloc[::-1] # Show latest
     
     if curr_user['Role'] == "RECRUITER": data = data[data['HR Name'] == curr_user['Username']]
     if find: data = data[data.astype(str).apply(lambda x: x.str.contains(find, case=False)).any(axis=1)]
 
     clients_df = pd.DataFrame(client_sheet.get_all_records())
-    clients_df.columns = [c.strip() for c in clients_df.columns]
 
     for _, r in data.iterrows():
         r_cols = st.columns([0.8, 1.2, 1, 1, 1.2, 1.2, 0.8, 1, 1, 0.8, 0.5, 0.5])
@@ -176,32 +199,15 @@ else:
         
         if r_cols[10].button("📝", key=f"e_{r['Reference_ID']}"): edit_candidate(r)
         
-        # WhatsApp Dynamic Invite Button Logic
         if r_cols[11].button("📲", key=f"w_{r['Reference_ID']}"):
             c_info = clients_df[clients_df['Client Name'] == r['Client Name']]
-            
-            if not c_info.empty:
-                c_addr = c_info.iloc[0].get('Address', 'Address Not Found')
-                c_map = c_info.iloc[0].get('Map Link', '')
-                c_person = c_info.iloc[0].get('Contact Person', 'HR Department')
-            else:
-                c_addr, c_map, c_person = "Address Not Found", "", "HR Department"
+            c_addr = c_info.iloc[0].get('Address', 'Address N/A') if not c_info.empty else "N/A"
+            c_map = c_info.iloc[0].get('Map Link', '') if not c_info.empty else ""
+            c_person = c_info.iloc[0].get('Contact Person', 'HR Dept') if not c_info.empty else "HR Dept"
 
-            # CLEANED MESSAGE FORMAT
-            msg = (
-                f"Dear {r.get('Candidate Name', 'Candidate')},\n\n"
-                "Congratulations! We invite you for a Direct Interview.\n\n"
-                "Reference: Takecare Manpower Services Pvt Ltd\n"
-                f"Position: {r.get('Job Title', 'Staff')}\n"
-                f"Interview Date: {r.get('Interview Date', 'TBA')}\n"
-                "Interview Time: 10:30 AM\n"
-                f"Address: {c_addr}\n"
-                f"Map Link: {c_map}\n"
-                f"Contact Person: {c_person}\n\n"
-                "Regards,\n"
-                f"{curr_user['Username']}\n"
-                "Takecare HR Team"
-            )
+            msg = (f"Dear {r.get('Candidate Name')},\n\nCongratulations! Interview invite.\n\n"
+                   f"Ref: Takecare Manpower\nPos: {r.get('Job Title')}\nDate: {r.get('Interview Date')}\n"
+                   f"Time: 10:30 AM\nAddress: {c_addr}\nMap: {c_map}\nContact: {c_person}\n\nRegards, {curr_user['Username']}")
             
             wa_url = f"https://api.whatsapp.com/send?phone=91{r['Contact Number']}&text={urllib.parse.quote(msg)}"
-            st.markdown(f'<a href="{wa_url}" target="_blank" style="text-decoration:none;"><button style="background-color:#25D366; color:white; border:none; padding:10px; border-radius:8px; cursor:pointer; width:100%; font-weight:bold;">OPEN WHATSAPP</button></a>', unsafe_allow_html=True)
+            st.markdown(f'<a href="{wa_url}" target="_blank"><button style="background:#25D366; color:white; border:none; padding:8px; border-radius:5px; width:100%; font-weight:bold;">WA</button></a>', unsafe_allow_html=True)
