@@ -90,29 +90,7 @@ else:
     # Dashboard Actions Row
     b1, b2, b3, b_search = st.columns([0.8, 0.8, 1.2, 2.5])
     
-    @st.dialog("➕ New Candidate Shortlist")
-    def add_shortlist():
-        rid = get_next_ref_id()
-        st.markdown(f"<p style='color:black;'><b>Ref ID:</b> {rid} | <b>Date:</b> {datetime.now().strftime('%d-%m-%Y')}</p>", unsafe_allow_html=True)
-        cm_df = pd.DataFrame(client_sheet.get_all_records())
-        c1, c2 = st.columns(2)
-        with c1:
-            name = st.text_input("Candidate Name")
-            phone = st.text_input("Phone Number")
-            cl_name = st.selectbox("Client", ["--Select--"] + sorted(cm_df['Client Name'].unique().tolist()))
-        with c2:
-            plist = cm_df[cm_df['Client Name'] == cl_name]['Position'].tolist() if cl_name != "--Select--" else []
-            pos = st.selectbox("Position", plist)
-            c_date = st.date_input("Commitment Date")
-        
-        feed = st.text_area("Initial Feedback")
-        if st.button("SAVE CANDIDATE", use_container_width=True):
-            if name and phone and cl_name != "--Select--":
-                row = [rid, datetime.now().strftime('%d-%m-%Y'), name, phone, cl_name, pos, c_date.strftime('%d-%m-%Y'), "Shortlisted", curr_user['Username'], "", "", feed]
-                cand_sheet.append_row(row)
-                st.success("Saved!"); st.rerun()
-
-    @st.dialog("📝 Update Candidate Status")
+    @st.dialog("📝 Update Status")
     def edit_candidate(row):
         st.markdown(f"<p style='color:black;'>Editing: <b>{row['Candidate Name']}</b></p>", unsafe_allow_html=True)
         st_list = ["Shortlisted", "Interviewed", "Selected", "Rejected", "Onboarded", "Hold", "Left", "Project Success"]
@@ -137,6 +115,28 @@ else:
                 cand_sheet.update_cell(idx, 11, sr_dt)
             st.rerun()
 
+    @st.dialog("➕ New Shortlist")
+    def add_shortlist():
+        rid = get_next_ref_id()
+        st.markdown(f"<p style='color:black;'><b>Ref ID:</b> {rid} | <b>Date:</b> {datetime.now().strftime('%d-%m-%Y')}</p>", unsafe_allow_html=True)
+        cm_df = pd.DataFrame(client_sheet.get_all_records())
+        c1, c2 = st.columns(2)
+        with c1:
+            name = st.text_input("Candidate Name")
+            phone = st.text_input("Phone Number")
+            cl_name = st.selectbox("Client", ["--Select--"] + sorted(cm_df['Client Name'].unique().tolist()))
+        with c2:
+            plist = cm_df[cm_df['Client Name'] == cl_name]['Position'].tolist() if cl_name != "--Select--" else []
+            pos = st.selectbox("Position", plist)
+            c_date = st.date_input("Commitment Date")
+        
+        feed = st.text_area("Initial Feedback")
+        if st.button("SAVE CANDIDATE", use_container_width=True):
+            if name and phone and cl_name != "--Select--":
+                row = [rid, datetime.now().strftime('%d-%m-%Y'), name, phone, cl_name, pos, c_date.strftime('%d-%m-%Y'), "Shortlisted", curr_user['Username'], "", "", feed]
+                cand_sheet.append_row(row)
+                st.success("Saved!"); st.rerun()
+
     with b1: st.button("🔍 Search")
     with b2: 
         if curr_user['Role'] in ['ADMIN', 'TL']: st.button("⚡ Filter")
@@ -145,7 +145,7 @@ else:
     with b_search:
         find = st.text_input("Search", label_visibility="collapsed", placeholder="Search Ref ID, Candidate Name...")
 
-    # --- 5. DATA TABLE & SMART AUTO-DELETION LOGIC ---
+    # --- 5. DATA TABLE & AUTO-DELETION LOGIC (SCENARIO BASED) ---
     st.markdown("---")
     cols = st.columns([0.8, 1.2, 1, 1, 1.2, 1.2, 0.8, 1, 1, 0.8, 0.5, 0.5])
     titles = ["Ref ID", "Candidate", "Contact", "Client Name", "Position / Job", "Comm / Int Date", "Status", "Onboard Date", "SR Date", "HR Name", "Edit", "WA"]
@@ -154,33 +154,43 @@ else:
     data = pd.DataFrame(cand_sheet.get_all_records())
     data.columns = data.columns.str.strip()
 
-    if not data.empty and 'Date' in data.columns:
-        data['EntryDate_dt'] = pd.to_datetime(data['Date'], format='%d-%m-%Y', errors='coerce')
+    if not data.empty:
         now = datetime.now()
 
-        def smart_auto_delete(row):
+        def apply_scenarios(row):
             status = str(row['Status'])
-            dt = row['EntryDate_dt']
-            if pd.isnull(dt): return True
-            days_diff = (now - dt).days
+            # Parse dates safely
+            entry_dt = pd.to_datetime(row['Date'], format='%d-%m-%Y', errors='coerce')
+            int_dt = pd.to_datetime(row['Interview Date'], format='%d-%m-%Y', errors='coerce')
+            onboard_dt = pd.to_datetime(row['Joining Date'], format='%d-%m-%Y', errors='coerce')
+
+            # SCENARIO 1: Shortlisted - Check from Entry Date (7 Days)
+            if status == "Shortlisted":
+                if pd.notnull(entry_dt) and (now - entry_dt).days > 7: return False
             
-            # Logic 1: Shortlisted > 7 days hide
-            if status == "Shortlisted" and days_diff > 7: return False
-            # Logic 2: Interviewed, Selected, Hold > 30 days hide
-            if status in ["Interviewed", "Selected", "Hold"] and days_diff > 30: return False
-            # Logic 3: Rejected, Left > 2 days hide
-            if status in ["Rejected", "Left"] and days_diff > 2: return False
-            # Logic 4: Onboarded / Project Success always keep
+            # SCENARIO 2: Selected/Hold - Check from Interview Date (30 Days)
+            if status in ["Selected", "Hold", "Interviewed"]:
+                if pd.notnull(int_dt) and (now - int_dt).days > 30: return False
+
+            # SCENARIO 3: Left - Immediate Hide based on Onboard date
+            if status == "Left": return False
+
+            # SCENARIO 4: Rejected - Immediate Hide based on Interview
+            if status == "Rejected": return False
+
+            # Project Success - Never Delete
+            if status == "Project Success": return True
+
             return True
 
-        # Apply filtering (Only in App, GSheet stays intact)
-        data = data[data.apply(smart_auto_delete, axis=1)]
-        data = data.drop(columns=['EntryDate_dt'])
+        # Run the filter
+        data = data[data.apply(apply_scenarios, axis=1)]
 
-    data = data.iloc[::-1]
+    data = data.iloc[::-1] # Show latest entries first
     if curr_user['Role'] == "RECRUITER": data = data[data['HR Name'] == curr_user['Username']]
     if find: data = data[data.astype(str).apply(lambda x: x.str.contains(find, case=False)).any(axis=1)]
 
+    # Fetch Client info for WA
     clients_df = pd.DataFrame(client_sheet.get_all_records())
     clients_df.columns = clients_df.columns.str.strip()
 
@@ -192,12 +202,11 @@ else:
         
         if r_cols[10].button("📝", key=f"e_{r['Reference_ID']}"): edit_candidate(r)
         
-        # 5. WHATSAPP FORMAT UPDATE
         if r_cols[11].button("📲", key=f"w_{r['Reference_ID']}"):
             c_info = clients_df[clients_df['Client Name'] == r['Client Name']]
             c_addr = c_info.iloc[0].get('Address', 'N/A') if not c_info.empty else "N/A"
-            c_map = c_info.iloc[0].get('Map Link', '') if not c_info.empty else ""
-            c_person = c_info.iloc[0].get('Contact Person', 'HR Dept') if not c_info.empty else "HR Dept"
+            c_map = c_info.iloc[0].get('Map Link', 'N/A') if not c_info.empty else "N/A"
+            c_person = c_info.iloc[0].get('Contact Person', 'HR Manager') if not c_info.empty else "HR Manager"
 
             msg = (f"Dear {r.get('Candidate Name')},\n\n"
                    "Congratulations! We invite you for a Direct Interview.\n\n"
