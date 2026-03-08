@@ -87,7 +87,7 @@ else:
     with h3:
         if st.button("Logout"): st.session_state.logged_in = False; st.rerun()
 
-    # Dashboard Actions
+    # Dashboard Actions Row
     b1, b2, b3, b_search = st.columns([0.8, 0.8, 1.2, 2.5])
     
     @st.dialog("➕ New Candidate Shortlist")
@@ -108,7 +108,6 @@ else:
         feed = st.text_area("Initial Feedback")
         if st.button("SAVE CANDIDATE", use_container_width=True):
             if name and phone and cl_name != "--Select--":
-                # Entry row: RefID, EntryDate, Name, Phone, Client, Position, CommitmentDate, Status, HRName, OnboardDate, SRDate, Feedback
                 row = [rid, datetime.now().strftime('%d-%m-%Y'), name, phone, cl_name, pos, c_date.strftime('%d-%m-%Y'), "Shortlisted", curr_user['Username'], "", "", feed]
                 cand_sheet.append_row(row)
                 st.success("Saved!"); st.rerun()
@@ -143,46 +142,48 @@ else:
     with b_search:
         find = st.text_input("Search", label_visibility="collapsed", placeholder="Search Ref ID, Candidate Name...")
 
-    # --- 5. DATA TABLE WITH AUTO-DELETION (FILTERING) LOGIC ---
+    # --- 5. DATA TABLE WITH AUTO-DELETION LOGIC ---
     st.markdown("---")
     cols = st.columns([0.8, 1.2, 1, 1, 1.2, 1.2, 0.8, 1, 1, 0.8, 0.5, 0.5])
     titles = ["Ref ID", "Candidate", "Contact", "Client Name", "Position / Job", "Comm / Int Date", "Status", "Onboard Date", "SR Date", "HR Name", "Edit", "WA"]
     for c, t in zip(cols, titles): c.markdown(f"<div class='header-box'>{t}</div>", unsafe_allow_html=True)
     
-    data = pd.DataFrame(cand_sheet.get_all_records())
-    data.columns = [c.strip() for c in data.columns]
+    # LOAD AND CLEAN DATA
+    raw_data = cand_sheet.get_all_records()
+    data = pd.DataFrame(raw_data)
+    data.columns = [c.strip() for c in data.columns] # REMOVES SPACES FROM COLUMN NAMES
 
     if not data.empty:
-        # Convert Date to datetime for calculations
-        data['EntryDate_dt'] = pd.to_datetime(data['Date'], format='%d-%m-%Y', errors='coerce')
+        # Check if Date exists (logic depends on Entry Date)
+        target_col = 'Date' if 'Date' in data.columns else data.columns[1] 
+        data['EntryDate_dt'] = pd.to_datetime(data[target_col], format='%d-%m-%Y', errors='coerce')
         now = datetime.now()
 
-        def should_show(row):
-            status = str(row['Status'])
+        def smart_filter(row):
+            status = str(row.get('Status', ''))
             entry_date = row['EntryDate_dt']
             if pd.isnull(entry_date): return True
             
-            # Logic 5: Onboarded and Project Success always stay
+            # Logic: Permanent Display
             if status in ["Onboarded", "Project Success"]: return True
-            # Logic 1: Shortlisted > 7 days hide
+            # Logic: 7 Days Deletion
             if status == "Shortlisted" and (now - entry_date).days > 7: return False
-            # Logic 2: Interviewed, Selected, Hold > 30 days hide
+            # Logic: 30 Days Deletion
             if status in ["Interviewed", "Selected", "Hold"] and (now - entry_date).days > 30: return False
-            # Logic 3: Rejected, Left > 2 days hide
+            # Logic: 2 Days Deletion
             if status in ["Rejected", "Left"] and (now - entry_date).days > 2: return False
-            
             return True
 
-        # Apply the smart filter
-        data = data[data.apply(should_show, axis=1)]
+        data = data[data.apply(smart_filter, axis=1)]
         data = data.drop(columns=['EntryDate_dt'])
 
-    data = data.iloc[::-1] # Show latest
+    data = data.iloc[::-1] # Show latest first
     
     if curr_user['Role'] == "RECRUITER": data = data[data['HR Name'] == curr_user['Username']]
     if find: data = data[data.astype(str).apply(lambda x: x.str.contains(find, case=False)).any(axis=1)]
 
     clients_df = pd.DataFrame(client_sheet.get_all_records())
+    clients_df.columns = [c.strip() for c in clients_df.columns]
 
     for _, r in data.iterrows():
         r_cols = st.columns([0.8, 1.2, 1, 1, 1.2, 1.2, 0.8, 1, 1, 0.8, 0.5, 0.5])
@@ -210,4 +211,4 @@ else:
                    f"Time: 10:30 AM\nAddress: {c_addr}\nMap: {c_map}\nContact: {c_person}\n\nRegards, {curr_user['Username']}")
             
             wa_url = f"https://api.whatsapp.com/send?phone=91{r['Contact Number']}&text={urllib.parse.quote(msg)}"
-            st.markdown(f'<a href="{wa_url}" target="_blank"><button style="background:#25D366; color:white; border:none; padding:8px; border-radius:5px; width:100%; font-weight:bold;">WA</button></a>', unsafe_allow_html=True)
+            st.markdown(f'<a href="{wa_url}" target="_blank" style="text-decoration:none;"><button style="background-color:#25D366; color:white; border:none; padding:8px; border-radius:5px; width:100%; font-weight:bold; cursor:pointer;">OPEN WA</button></a>', unsafe_allow_html=True)
