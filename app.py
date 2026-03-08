@@ -87,6 +87,7 @@ else:
     with h3:
         if st.button("Logout"): st.session_state.logged_in = False; st.rerun()
 
+    # Dashboard Actions Row
     b1, b2, b3, b_search = st.columns([0.8, 0.8, 1.2, 2.5])
     
     @st.dialog("➕ New Candidate Shortlist")
@@ -136,6 +137,9 @@ else:
                 cand_sheet.update_cell(idx, 11, sr_dt)
             st.rerun()
 
+    with b1: st.button("🔍 Search")
+    with b2: 
+        if curr_user['Role'] in ['ADMIN', 'TL']: st.button("⚡ Filter")
     with b3:
         if st.button("➕ New Shortlist"): add_shortlist()
     with b_search:
@@ -154,7 +158,6 @@ else:
     if curr_user['Role'] == "RECRUITER": data = data[data['HR Name'] == curr_user['Username']]
     if find: data = data[data.astype(str).apply(lambda x: x.str.contains(find, case=False)).any(axis=1)]
 
-    # Cache Client Data for fast WhatsApp Invite Lookups
     clients_df = pd.DataFrame(client_sheet.get_all_records())
 
     for _, r in data.iterrows():
@@ -172,9 +175,8 @@ else:
         
         if r_cols[10].button("📝", key=f"e_{r['Reference_ID']}"): edit_candidate(r)
         
-        # --- WHATSAPP DYNAMIC INVITE ---
+        # WhatsApp Dynamic Invite Button
         if r_cols[11].button("📲", key=f"w_{r['Reference_ID']}"):
-            # Fetch specific client details from Client_Master
             c_info = clients_df[clients_df['Client Name'] == r['Client Name']]
             c_addr = c_info.iloc[0]['Address'] if not c_info.empty else "Address Not Found"
             c_map = c_info.iloc[0]['Map Link'] if not c_info.empty else ""
@@ -195,4 +197,4 @@ else:
             )
             
             wa_url = f"https://api.whatsapp.com/send?phone=91{r['Contact Number']}&text={urllib.parse.quote(msg)}"
-            st.link_button("SEND INVITE", wa_url)
+            st.markdown(f'<a href="{wa_url}" target="_blank" style="text-decoration:none;"><button style="background-color:#25D366; color:white; border:none; padding:5px 10px; border-radius:5px; cursor:pointer;">OPEN WHATSAPP</button></a>', unsafe_allow_html=True)
