@@ -5,66 +5,25 @@ from google.oauth2.service_account import Credentials
 import urllib.parse
 from datetime import datetime, timedelta
 
-# --- 1. PAGE CONFIG & ADVANCED UI STYLING ---
+# --- 1. PAGE CONFIG & UI STYLING ---
 st.set_page_config(page_title="Takecare Manpower ATS", layout="wide", initial_sidebar_state="collapsed")
 
 st.markdown("""
     <style>
     header[data-testid="stHeader"] { background: transparent !important; height: 0px; }
     .main .block-container { padding-top: 0.5rem !important; }
-    
-    .stApp {
-        background: linear-gradient(135deg, #0f0c29, #302b63, #24243e) !important;
-        background-attachment: fixed;
-    }
-
-    [data-testid="stVerticalBlock"] > div:nth-child(5) {
-        position: sticky;
-        top: 0;
-        z-index: 999;
-        background: #1a1a2e;
-        padding: 5px 0;
-    }
-
-    /* Dropdown Selection Visibility (Dark Blue Text on White Box) */
+    .stApp { background: linear-gradient(135deg, #0f0c29, #302b63, #24243e) !important; background-attachment: fixed; }
+    [data-testid="stVerticalBlock"] > div:nth-child(5) { position: sticky; top: 0; z-index: 999; background: #1a1a2e; padding: 5px 0; }
     div[data-baseweb="select"] { background-color: white !important; border-radius: 5px !important; }
     div[data-testid="stSelectbox"] * { color: #000033 !important; font-weight: bold !important; }
     div[role="listbox"] ul li { color: #000033 !important; background-color: white !important; }
-
-    div[data-baseweb="input"] > div, div[data-baseweb="textarea"] > div {
-        background-color: white !important;
-        border-radius: 5px !important;
-    }
+    div[data-baseweb="input"] > div, div[data-baseweb="textarea"] > div { background-color: white !important; border-radius: 5px !important; }
     input, textarea { color: #000033 !important; font-weight: bold !important; }
-
     label p { color: white !important; font-size: 14px !important; font-weight: bold !important; }
     .stMarkdown p, .stWrite { color: white !important; }
-
-    .stButton > button {
-        background-color: #FF0000 !important;
-        color: white !important;
-        font-weight: bold !important;
-        border-radius: 8px !important;
-        border: 1px solid white !important;
-    }
-    
-    .header-box {
-        color: #00BFFF !important;
-        font-size: 11px !important;
-        font-weight: bold;
-        text-align: center;
-        border-bottom: 2px solid #555;
-        padding: 5px 0;
-        line-height: 1.2;
-    }
-
-    .row-text {
-        color: white !important;
-        font-size: 13px;
-        text-align: center;
-        padding: 5px 0;
-    }
-    
+    .stButton > button { background-color: #FF0000 !important; color: white !important; font-weight: bold !important; border-radius: 8px !important; border: 1px solid white !important; }
+    .header-box { color: #00BFFF !important; font-size: 11px !important; font-weight: bold; text-align: center; border-bottom: 2px solid #555; padding: 5px 0; line-height: 1.2; }
+    .row-text { color: white !important; font-size: 13px; text-align: center; padding: 5px 0; }
     .slogan { color: #FFD700 !important; font-size: 18px; font-weight: bold; margin-top: -10px; }
     </style>
     """, unsafe_allow_html=True)
@@ -101,11 +60,11 @@ if not st.session_state.logged_in:
     with col_m:
         st.markdown("<div style='background: rgba(255,255,255,0.1); padding: 20px; border-radius: 15px;'>", unsafe_allow_html=True)
         with st.form("login"):
-            u = st.text_input("Email ID")
-            p = st.text_input("Password", type="password")
+            u_input = st.text_input("Email ID")
+            p_input = st.text_input("Password", type="password")
             if st.form_submit_button("ATS LOGIN", use_container_width=True):
                 udf = pd.DataFrame(user_sheet.get_all_records())
-                match = udf[(udf['Mail_ID'] == u) & (udf['Password'].astype(str) == p)]
+                match = udf[(udf['Mail_ID'] == u_input) & (udf['Password'].astype(str) == p_input)]
                 if not match.empty:
                     st.session_state.logged_in = True
                     st.session_state.user_data = match.iloc[0].to_dict()
@@ -134,21 +93,20 @@ else:
     def add_shortlist():
         rid = get_next_ref_id()
         st.markdown(f"<p style='color:black;'><b>Ref ID:</b> {rid} | <b>Date:</b> {datetime.now().strftime('%d-%m-%Y')}</p>", unsafe_allow_html=True)
-        cm = pd.DataFrame(client_sheet.get_all_records())
+        cm_data = pd.DataFrame(client_sheet.get_all_records())
         c1, c2 = st.columns(2)
         with c1:
             name = st.text_input("Candidate Name")
             phone = st.text_input("Phone Number")
-            cl_name = st.selectbox("Client", ["--Select--"] + sorted(cm['Client Name'].unique().tolist()))
+            cl_name = st.selectbox("Client", ["--Select--"] + sorted(cm_data['Client Name'].unique().tolist()))
         with c2:
-            plist = cm[cm['Client Name'] == cl_name]['Position'].tolist() if cl_name != "--Select--" else []
+            plist = cm_data[cm_data['Client Name'] == cl_name]['Position'].tolist() if cl_name != "--Select--" else []
             pos = st.selectbox("Position", plist)
             c_date = st.date_input("Commitment Date")
         
         feed = st.text_area("Initial Feedback")
         if st.button("SAVE CANDIDATE", use_container_width=True):
             if name and phone and cl_name != "--Select--":
-                # Sheet Columns: RefID, Shortlisted Date, Candidate Name, Contact, Client, Job, Interview Date, Status, HR, Joining Date, SR Date, Feedback
                 row = [rid, datetime.now().strftime('%d-%m-%Y'), name, phone, cl_name, pos, c_date.strftime('%d-%m-%Y'), "Shortlisted", u['Username'], "", "", feed]
                 cand_sheet.append_row(row)
                 st.success("Saved!"); st.rerun()
@@ -165,30 +123,25 @@ else:
         
         if st.button("UPDATE DATA", use_container_width=True):
             idx = cand_sheet.find(row['Reference_ID']).row
-            cand_sheet.update_cell(idx, 8, new_st) # Status (Col 8)
-            cand_sheet.update_cell(idx, 12, new_fb) # Feedback (Col 12)
-            
+            cand_sheet.update_cell(idx, 8, new_st)
+            cand_sheet.update_cell(idx, 12, new_fb)
             if new_st == "Interviewed":
-                cand_sheet.update_cell(idx, 7, evt_date.strftime('%d-%m-%Y')) # Commitment Date replaced with Interview Date (Col 7)
-            
+                cand_sheet.update_cell(idx, 7, evt_date.strftime('%d-%m-%Y'))
             if new_st == "Onboarded":
-                cand_sheet.update_cell(idx, 10, evt_date.strftime('%d-%m-%Y')) # Joining Date (Col 10)
-                cm = pd.DataFrame(client_sheet.get_all_records())
-                days_val = cm[cm['Client Name'] == row['Client Name']]['SR Days'].values
+                cand_sheet.update_cell(idx, 10, evt_date.strftime('%d-%m-%Y'))
+                cm_df = pd.DataFrame(client_sheet.get_all_records())
+                days_val = cm_df[cm_df['Client Name'] == row['Client Name']]['SR Days'].values
                 days = int(days_val[0]) if len(days_val) > 0 else 0
                 sr_dt = (evt_date + timedelta(days=days)).strftime('%d-%m-%Y')
-                cand_sheet.update_cell(idx, 11, sr_dt) # SR Date (Col 11)
+                cand_sheet.update_cell(idx, 11, sr_dt)
             st.rerun()
 
-    with b1: st.button("🔍 Search")
-    with b2: 
-        if u['Role'] in ['ADMIN', 'TL']: st.button("⚡ Filter")
     with b3:
         if st.button("➕ New Shortlist"): add_shortlist()
     with b_search:
         find = st.text_input("Search", label_visibility="collapsed", placeholder="Search Ref ID, Candidate Name...")
 
-    # --- 5. DATA TABLE (MATCHED WITH SHEET LOGIC) ---
+    # --- 5. DATA TABLE ---
     st.markdown("---")
     cols = st.columns([0.8, 1.2, 1, 1, 1.2, 1.2, 0.8, 1, 1, 0.8, 0.5, 0.5])
     titles = ["Ref ID", "Candidate", "Contact", "Client Name", "Position / Job", "Comm / Int Date", "Status", "Onboard Date", "SR Date", "HR Name", "Edit", "WA"]
@@ -201,6 +154,9 @@ else:
     if u['Role'] == "RECRUITER": data = data[data['HR Name'] == u['Username']]
     if find: data = data[data.astype(str).apply(lambda x: x.str.contains(find, case=False)).any(axis=1)]
 
+    # Fetch Client Master once to avoid multiple API calls in loop
+    cm_df = pd.DataFrame(client_sheet.get_all_records())
+
     for _, r in data.iterrows():
         r_cols = st.columns([0.8, 1.2, 1, 1, 1.2, 1.2, 0.8, 1, 1, 0.8, 0.5, 0.5])
         r_cols[0].markdown(f"<div class='row-text'>{r.get('Reference_ID','')}</div>", unsafe_allow_html=True)
@@ -208,20 +164,39 @@ else:
         r_cols[2].markdown(f"<div class='row-text'>{r.get('Contact Number','')}</div>", unsafe_allow_html=True)
         r_cols[3].markdown(f"<div class='row-text'>{r.get('Client Name','')}</div>", unsafe_allow_html=True)
         r_cols[4].markdown(f"<div class='row-text'>{r.get('Job Title','')}</div>", unsafe_allow_html=True)
-        
-        # Correction 2: Interview Date mapping (Sheet Col 7 -> ATS Col 6)
         r_cols[5].markdown(f"<div class='row-text'>{r.get('Interview Date','')}</div>", unsafe_allow_html=True)
-        
         r_cols[6].markdown(f"<div class='row-text'>{r.get('Status','')}</div>", unsafe_allow_html=True)
-        
-        # Correction 3: Joining Date mapping (Sheet Col 10 -> ATS Col 8)
         r_cols[7].markdown(f"<div class='row-text'>{r.get('Joining Date','')}</div>", unsafe_allow_html=True)
-        
         r_cols[8].markdown(f"<div class='row-text'>{r.get('SR Date','')}</div>", unsafe_allow_html=True)
         r_cols[9].markdown(f"<div class='row-text'>{r.get('HR Name','')}</div>", unsafe_allow_html=True)
         
         if r_cols[10].button("📝", key=f"e_{r['Reference_ID']}"): edit_candidate(r)
         
+        # --- WHATSAPP INVITE LOGIC ---
         if r_cols[11].button("📲", key=f"w_{r['Reference_ID']}"):
-            msg = f"Hi {r['Candidate Name']}, you are shortlisted for {r['Job Title']} at {r['Client Name']}."
-            st.link_button("WA", f"https://wa.me/91{r['Contact Number']}?text={urllib.parse.quote(msg)}")
+            # Client details filter
+            client_info = cm_df[cm_df['Client Name'] == r['Client Name']]
+            if not client_info.empty:
+                address = client_info.iloc[0]['Address']
+                map_link = client_info.iloc[0]['Map Link']
+                contact_person = client_info.iloc[0]['Contact Person']
+            else:
+                address = "N/A"; map_link = "N/A"; contact_person = "N/A"
+
+            # Message Formatting
+            msg = (
+                f"Dear {r['Candidate Name']},\n\n"
+                "Congratulations! We invite you for a Direct Interview.\n\n"
+                "Reference: Takecare Manpower Services Pvt Ltd\n"
+                f"Position: {r['Job Title']}\n"
+                f"Interview Date: {r['Interview Date']}\n"
+                f"Address: {address}\n"
+                f"Map Link: {map_link}\n"
+                f"Contact Person: {contact_person}\n\n"
+                "Regards,\n"
+                f"{u['Username']}\n"
+                "Takecare HR Team"
+            )
+            
+            wa_url = f"https://api.whatsapp.com/send?phone=91{r['Contact Number']}&text={urllib.parse.quote(msg)}"
+            st.link_button("OPEN WHATSAPP", wa_url)
