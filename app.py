@@ -30,7 +30,7 @@ user_sheet, client_sheet, cand_sheet = sh.worksheet("User_Master"), sh.worksheet
 
 if 'logged_in' not in st.session_state: st.session_state.logged_in = False
 
-# --- 3. LOGIN & DASHBOARD LOGIC ---
+# --- 3. LOGIN & DASHBOARD ---
 if not st.session_state.logged_in:
     st.markdown("<h1 style='text-align: center; color: white;'>TAKECARE ATS LOGIN</h1>", unsafe_allow_html=True)
     with st.form("login"):
@@ -46,8 +46,7 @@ else:
     @st.dialog("📝 Update Status")
     def edit_candidate(row):
         new_st = st.selectbox("Status", ["Shortlisted", "Interviewed", "Selected", "Rejected", "Onboarded", "Hold", "Left", "Project Success"], index=0)
-        new_fb = st.text_input("Feedback", value=row.get('Feedback', ''))
-        evt_date = st.date_input("Event Date")
+        new_fb, evt_date = st.text_input("Feedback", value=row.get('Feedback', '')), st.date_input("Event Date")
         if st.button("UPDATE"):
             idx = cand_sheet.find(row['Reference_ID']).row
             cand_sheet.update_cell(idx, 8, new_st); cand_sheet.update_cell(idx, 12, new_fb)
@@ -78,7 +77,7 @@ else:
         if st.button("Logout"): st.session_state.logged_in = False; st.rerun()
     find = c3.text_input("Search Candidate...")
 
-    # --- 4. DATA DISPLAY & AUTO-HIDE LOGIC ---
+    # --- 4. AUTO-HIDE LOGIC ---
     data = pd.DataFrame(cand_sheet.get_all_records())
     data.columns = [str(c).strip() for c in data.columns]
     
