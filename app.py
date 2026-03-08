@@ -87,7 +87,7 @@ else:
     with h3:
         if st.button("Logout"): st.session_state.logged_in = False; st.rerun()
 
-    # Dashboard Actions
+    # Dashboard Actions Row
     b1, b2, b3, b_search = st.columns([0.8, 0.8, 1.2, 2.5])
     
     @st.dialog("➕ New Candidate Shortlist")
@@ -138,71 +138,86 @@ else:
             st.rerun()
 
     with b1: st.button("🔍 Search")
-    with b2:
+    with b2: 
         if curr_user['Role'] in ['ADMIN', 'TL']: st.button("⚡ Filter")
     with b3:
         if st.button("➕ New Shortlist"): add_shortlist()
     with b_search:
         find = st.text_input("Search", label_visibility="collapsed", placeholder="Search Ref ID, Candidate Name...")
 
-    # --- 5. DATA TABLE & AUTO-DELETION ---
+    # --- 5. DATA TABLE & AUTO-DELETION LOGIC (APP ONLY) ---
     st.markdown("---")
     cols = st.columns([0.8, 1.2, 1, 1, 1.2, 1.2, 0.8, 1, 1, 0.8, 0.5, 0.5])
     titles = ["Ref ID", "Candidate", "Contact", "Client Name", "Position / Job", "Comm / Int Date", "Status", "Onboard Date", "SR Date", "HR Name", "Edit", "WA"]
     for c, t in zip(cols, titles): c.markdown(f"<div class='header-box'>{t}</div>", unsafe_allow_html=True)
     
-    data = pd.DataFrame(cand_sheet.get_all_records())
-    data.columns = data.columns.str.strip() # FIX FOR KEYERROR
+    # FETCH DATA
+    raw_data = cand_sheet.get_all_records()
+    data = pd.DataFrame(raw_data)
+    
+    # 1. KEYERROR FIX: Clean column names
+    data.columns = data.columns.str.strip()
 
     if not data.empty and 'Date' in data.columns:
+        # 2. AUTO-DELETION LOGIC (Filters view, doesn't delete from Sheet)
         data['EntryDate_dt'] = pd.to_datetime(data['Date'], format='%d-%m-%Y', errors='coerce')
         now = datetime.now()
 
-        def smart_filter(row):
+        def should_keep(row):
             status = str(row['Status'])
             dt = row['EntryDate_dt']
             if pd.isnull(dt): return True
+            days_diff = (now - dt).days
+            
             if status in ["Onboarded", "Project Success"]: return True
-            if status == "Shortlisted" and (now - dt).days > 7: return False
-            if status in ["Interviewed", "Selected", "Hold"] and (now - dt).days > 30: return False
-            if status in ["Rejected", "Left"] and (now - dt).days > 2: return False
+            if status == "Shortlisted" and days_diff > 7: return False
+            if status in ["Interviewed", "Selected", "Hold"] and days_diff > 30: return False
+            if status in ["Rejected", "Left"] and days_diff > 2: return False
             return True
 
-        data = data[data.apply(smart_filter, axis=1)]
+        data = data[data.apply(should_keep, axis=1)]
         data = data.drop(columns=['EntryDate_dt'])
 
-    data = data.iloc[::-1]
+    data = data.iloc[::-1] # Latest entries on top
+    
+    # User Permissions & Search
     if curr_user['Role'] == "RECRUITER": data = data[data['HR Name'] == curr_user['Username']]
     if find: data = data[data.astype(str).apply(lambda x: x.str.contains(find, case=False)).any(axis=1)]
 
+    # Client Data for WA Message
     clients_df = pd.DataFrame(client_sheet.get_all_records())
     clients_df.columns = clients_df.columns.str.strip()
 
     for _, r in data.iterrows():
         r_cols = st.columns([0.8, 1.2, 1, 1, 1.2, 1.2, 0.8, 1, 1, 0.8, 0.5, 0.5])
-        for idx, key in enumerate(['Reference_ID', 'Candidate Name', 'Contact Number', 'Client Name', 'Job Title', 'Interview Date', 'Status', 'Joining Date', 'SR Date', 'HR Name']):
-            r_cols[idx].markdown(f"<div class='row-text'>{r.get(key,'')}</div>", unsafe_allow_html=True)
         
+        # Mapping row data to columns
+        fields = ['Reference_ID', 'Candidate Name', 'Contact Number', 'Client Name', 'Job Title', 'Interview Date', 'Status', 'Joining Date', 'SR Date', 'HR Name']
+        for idx, field in enumerate(fields):
+            r_cols[idx].markdown(f"<div class='row-text'>{r.get(field,'')}</div>", unsafe_allow_html=True)
+        
+        # Edit Button
         if r_cols[10].button("📝", key=f"e_{r['Reference_ID']}"): edit_candidate(r)
         
+        # 3. WHATSAPP PROFESSIONAL FORMAT
         if r_cols[11].button("📲", key=f"w_{r['Reference_ID']}"):
             c_info = clients_df[clients_df['Client Name'] == r['Client Name']]
-            c_addr = c_info.iloc[0].get('Address', 'Address N/A') if not c_info.empty else "N/A"
+            c_addr = c_info.iloc[0].get('Address', 'N/A') if not c_info.empty else "N/A"
             c_map = c_info.iloc[0].get('Map Link', '') if not c_info.empty else ""
-            c_person = c_info.iloc[0].get('Contact Person', 'HR Dept') if not c_info.empty else "HR Dept"
+            c_person = c_info.iloc[0].get('Contact Person', 'HR Manager') if not c_info.empty else "HR Manager"
 
-            msg = (f"Dear {r.get('Candidate Name', 'Candidate')},\n\n"
-                   "Congratulations! We invite you for a Direct Interview.\n\n"
-                   "Reference: Takecare Manpower Services Pvt Ltd\n"
-                   f"Position: {r.get('Job Title', 'Staff')}\n"
-                   f"Interview Date: {r.get('Interview Date', 'TBA')}\n"
-                   "Interview Time: 10:30 AM\n"
-                   f"Address: {c_addr}\n"
-                   f"Map Link: {c_map}\n"
-                   f"Contact Person: {c_person}\n\n"
-                   "Regards,\n"
-                   f"{curr_user['Username']}\n"
-                   "Takecare HR Team")
+            msg = (f"Dear *{r.get('Candidate Name')}*,\n\n"
+                   "Congratulations! 🎊 You have been invited for a Direct Interview.\n\n"
+                   "*Interview Details:*\n"
+                   f"📍 *Company:* {r.get('Client Name')}\n"
+                   f"💼 *Position:* {r.get('Job Title')}\n"
+                   f"📅 *Date:* {r.get('Interview Date')}\n"
+                   f"🕙 *Time:* 10:30 AM\n\n"
+                   f"📌 *Address:* {c_addr}\n"
+                   f"🗺️ *Map:* {c_map}\n"
+                   f"👤 *Contact Person:* {c_person}\n\n"
+                   "Please carry your updated Resume and ID proof.\n\n"
+                   f"Regards,\n*{curr_user['Username']}*\nTakecare Manpower Services Pvt Ltd")
             
             wa_url = f"https://api.whatsapp.com/send?phone=91{r['Contact Number']}&text={urllib.parse.quote(msg)}"
             st.markdown(f'<a href="{wa_url}" target="_blank" style="text-decoration:none;"><button style="background-color:#25D366; color:white; border:none; padding:8px; border-radius:5px; width:100%; font-weight:bold; cursor:pointer;">OPEN WA</button></a>', unsafe_allow_html=True)
