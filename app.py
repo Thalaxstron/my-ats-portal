@@ -5,7 +5,7 @@ from google.oauth2.service_account import Credentials
 import urllib.parse
 from datetime import datetime, timedelta
 
-# --- 1. PAGE CONFIG & ADVANCED UI STYLING ---
+# --- 1. PAGE CONFIG & UI STYLING ---
 st.set_page_config(page_title="Takecare Manpower ATS", layout="wide", initial_sidebar_state="collapsed")
 
 st.markdown("""
@@ -87,7 +87,7 @@ else:
     with h3:
         if st.button("Logout"): st.session_state.logged_in = False; st.rerun()
 
-    # Dashboard Actions Row
+    # Dashboard Actions
     b1, b2, b3, b_search = st.columns([0.8, 0.8, 1.2, 2.5])
     
     @st.dialog("➕ New Candidate Shortlist")
@@ -137,66 +137,51 @@ else:
                 cand_sheet.update_cell(idx, 11, sr_dt)
             st.rerun()
 
+    with b1: st.button("🔍 Search")
+    with b2:
+        if curr_user['Role'] in ['ADMIN', 'TL']: st.button("⚡ Filter")
     with b3:
         if st.button("➕ New Shortlist"): add_shortlist()
     with b_search:
         find = st.text_input("Search", label_visibility="collapsed", placeholder="Search Ref ID, Candidate Name...")
 
-    # --- 5. DATA TABLE WITH AUTO-DELETION LOGIC ---
+    # --- 5. DATA TABLE & AUTO-DELETION ---
     st.markdown("---")
     cols = st.columns([0.8, 1.2, 1, 1, 1.2, 1.2, 0.8, 1, 1, 0.8, 0.5, 0.5])
     titles = ["Ref ID", "Candidate", "Contact", "Client Name", "Position / Job", "Comm / Int Date", "Status", "Onboard Date", "SR Date", "HR Name", "Edit", "WA"]
     for c, t in zip(cols, titles): c.markdown(f"<div class='header-box'>{t}</div>", unsafe_allow_html=True)
     
-    # LOAD AND CLEAN DATA
-    raw_data = cand_sheet.get_all_records()
-    data = pd.DataFrame(raw_data)
-    data.columns = [c.strip() for c in data.columns] # REMOVES SPACES FROM COLUMN NAMES
+    data = pd.DataFrame(cand_sheet.get_all_records())
+    data.columns = data.columns.str.strip() # FIX FOR KEYERROR
 
-    if not data.empty:
-        # Check if Date exists (logic depends on Entry Date)
-        target_col = 'Date' if 'Date' in data.columns else data.columns[1] 
-        data['EntryDate_dt'] = pd.to_datetime(data[target_col], format='%d-%m-%Y', errors='coerce')
+    if not data.empty and 'Date' in data.columns:
+        data['EntryDate_dt'] = pd.to_datetime(data['Date'], format='%d-%m-%Y', errors='coerce')
         now = datetime.now()
 
         def smart_filter(row):
-            status = str(row.get('Status', ''))
-            entry_date = row['EntryDate_dt']
-            if pd.isnull(entry_date): return True
-            
-            # Logic: Permanent Display
+            status = str(row['Status'])
+            dt = row['EntryDate_dt']
+            if pd.isnull(dt): return True
             if status in ["Onboarded", "Project Success"]: return True
-            # Logic: 7 Days Deletion
-            if status == "Shortlisted" and (now - entry_date).days > 7: return False
-            # Logic: 30 Days Deletion
-            if status in ["Interviewed", "Selected", "Hold"] and (now - entry_date).days > 30: return False
-            # Logic: 2 Days Deletion
-            if status in ["Rejected", "Left"] and (now - entry_date).days > 2: return False
+            if status == "Shortlisted" and (now - dt).days > 7: return False
+            if status in ["Interviewed", "Selected", "Hold"] and (now - dt).days > 30: return False
+            if status in ["Rejected", "Left"] and (now - dt).days > 2: return False
             return True
 
         data = data[data.apply(smart_filter, axis=1)]
         data = data.drop(columns=['EntryDate_dt'])
 
-    data = data.iloc[::-1] # Show latest first
-    
+    data = data.iloc[::-1]
     if curr_user['Role'] == "RECRUITER": data = data[data['HR Name'] == curr_user['Username']]
     if find: data = data[data.astype(str).apply(lambda x: x.str.contains(find, case=False)).any(axis=1)]
 
     clients_df = pd.DataFrame(client_sheet.get_all_records())
-    clients_df.columns = [c.strip() for c in clients_df.columns]
+    clients_df.columns = clients_df.columns.str.strip()
 
     for _, r in data.iterrows():
         r_cols = st.columns([0.8, 1.2, 1, 1, 1.2, 1.2, 0.8, 1, 1, 0.8, 0.5, 0.5])
-        r_cols[0].markdown(f"<div class='row-text'>{r.get('Reference_ID','')}</div>", unsafe_allow_html=True)
-        r_cols[1].markdown(f"<div class='row-text'>{r.get('Candidate Name','')}</div>", unsafe_allow_html=True)
-        r_cols[2].markdown(f"<div class='row-text'>{r.get('Contact Number','')}</div>", unsafe_allow_html=True)
-        r_cols[3].markdown(f"<div class='row-text'>{r.get('Client Name','')}</div>", unsafe_allow_html=True)
-        r_cols[4].markdown(f"<div class='row-text'>{r.get('Job Title','')}</div>", unsafe_allow_html=True)
-        r_cols[5].markdown(f"<div class='row-text'>{r.get('Interview Date','')}</div>", unsafe_allow_html=True)
-        r_cols[6].markdown(f"<div class='row-text'>{r.get('Status','')}</div>", unsafe_allow_html=True)
-        r_cols[7].markdown(f"<div class='row-text'>{r.get('Joining Date','')}</div>", unsafe_allow_html=True)
-        r_cols[8].markdown(f"<div class='row-text'>{r.get('SR Date','')}</div>", unsafe_allow_html=True)
-        r_cols[9].markdown(f"<div class='row-text'>{r.get('HR Name','')}</div>", unsafe_allow_html=True)
+        for idx, key in enumerate(['Reference_ID', 'Candidate Name', 'Contact Number', 'Client Name', 'Job Title', 'Interview Date', 'Status', 'Joining Date', 'SR Date', 'HR Name']):
+            r_cols[idx].markdown(f"<div class='row-text'>{r.get(key,'')}</div>", unsafe_allow_html=True)
         
         if r_cols[10].button("📝", key=f"e_{r['Reference_ID']}"): edit_candidate(r)
         
@@ -206,9 +191,18 @@ else:
             c_map = c_info.iloc[0].get('Map Link', '') if not c_info.empty else ""
             c_person = c_info.iloc[0].get('Contact Person', 'HR Dept') if not c_info.empty else "HR Dept"
 
-            msg = (f"Dear {r.get('Candidate Name')},\n\nCongratulations! Interview invite.\n\n"
-                   f"Ref: Takecare Manpower\nPos: {r.get('Job Title')}\nDate: {r.get('Interview Date')}\n"
-                   f"Time: 10:30 AM\nAddress: {c_addr}\nMap: {c_map}\nContact: {c_person}\n\nRegards, {curr_user['Username']}")
+            msg = (f"Dear {r.get('Candidate Name', 'Candidate')},\n\n"
+                   "Congratulations! We invite you for a Direct Interview.\n\n"
+                   "Reference: Takecare Manpower Services Pvt Ltd\n"
+                   f"Position: {r.get('Job Title', 'Staff')}\n"
+                   f"Interview Date: {r.get('Interview Date', 'TBA')}\n"
+                   "Interview Time: 10:30 AM\n"
+                   f"Address: {c_addr}\n"
+                   f"Map Link: {c_map}\n"
+                   f"Contact Person: {c_person}\n\n"
+                   "Regards,\n"
+                   f"{curr_user['Username']}\n"
+                   "Takecare HR Team")
             
             wa_url = f"https://api.whatsapp.com/send?phone=91{r['Contact Number']}&text={urllib.parse.quote(msg)}"
             st.markdown(f'<a href="{wa_url}" target="_blank" style="text-decoration:none;"><button style="background-color:#25D366; color:white; border:none; padding:8px; border-radius:5px; width:100%; font-weight:bold; cursor:pointer;">OPEN WA</button></a>', unsafe_allow_html=True)
