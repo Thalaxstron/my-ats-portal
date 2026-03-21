@@ -127,9 +127,10 @@ else:
                 row = [rid, datetime.now().strftime('%d-%m-%Y'), name, phone, cl_name, pos, c_date.strftime('%d-%m-%Y'), "Shortlisted", curr_user['Username'], "", "", feed]
                 cand_sheet.append_row(row); st.success("Saved!"); st.rerun()
 
-    with b1: st.button("🔍 Search")
+    # --- CORRECTION 3: SEARCH BUTTON REPLACED WITH FILTER ---
+    with b1: st.button("⚡ Filter", key="filter_main")
     with b2: 
-        if curr_user['Role'] in ['ADMIN', 'TL']: st.button("⚡ Filter")
+        if curr_user['Role'] in ['ADMIN', 'TL']: st.button("⚙️ Admin", key="admin_btn")
     with b3:
         if st.button("➕ New Shortlist"): add_shortlist()
     with b_search:
@@ -148,17 +149,19 @@ else:
         now = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
         def apply_scenarios(row):
             status = str(row.get('Status', ''))
+            # --- CORRECTION 1: HIDE SHORTLISTED IF COMMITMENT DATE >= 7 DAYS ---
+            comm_dt = pd.to_datetime(str(row.get('Interview Date', '')), format='%d-%m-%Y', errors='coerce') 
             e_dt = pd.to_datetime(str(row.get('Date', '')), format='%d-%m-%Y', errors='coerce')
-            i_dt = pd.to_datetime(str(row.get('Interview Date', '')), format='%d-%m-%Y', errors='coerce')
             
-            # Scenario 1: Shortlisted (Hide if 7 days or more)
             if status == "Shortlisted":
-                if pd.notnull(e_dt) and (now - e_dt).days >= 7: return False
-            # Scenario 2: Others (30 Days)
+                # Using Interview Date column as Commitment Date per your ATS structure
+                ref_dt = comm_dt if pd.notnull(comm_dt) else e_dt
+                if pd.notnull(ref_dt) and (now - ref_dt).days >= 7: return False
+                
             if status in ["Selected", "Hold", "Interviewed"]:
-                ref = i_dt if pd.notnull(i_dt) else e_dt
+                ref = comm_dt if pd.notnull(comm_dt) else e_dt
                 if pd.notnull(ref) and (now - ref).days > 30: return False
-            # Scenario 3: Immediate Hide
+                
             if status in ["Left", "Rejected"]: return False
             return True
 
@@ -182,12 +185,20 @@ else:
             c_addr = c_info.iloc[0].get('Address', 'N/A') if not c_info.empty else "N/A"
             c_map = c_info.iloc[0].get('Map Link', 'N/A') if not c_info.empty else "N/A"
             c_person = c_info.iloc[0].get('Contact Person', 'HR Dept') if not c_info.empty else "HR Dept"
+            
+            # --- CORRECTION 2: WHATSAPP PROFESSIONAL FORMAT ---
             msg = (f"Dear {r.get('Candidate Name')},\n\n"
-                   f"Interview confirmed at {r.get('Client Name')}.\n"
-                   f"Address: {c_addr}\n"
-                   f"Map: {c_map}\n"
-                   f"Contact: {c_person}\n\n"
+                   f"Congratulations! We invite you for a Direct Interview.\n\n"
+                   f"Reference: Takecare Manpower Services Pvt Ltd\n"
+                   f"Position: {r.get('Job Title')}\n"
+                   f"Interview Date: {r.get('Interview Date')}\n"
+                   f"Interview Time: 10:30 AM\n"
+                   f"Address: {r.get('Client Name')}\n{c_addr}\n"
+                   f"Map Link: {c_map}\n"
+                   f"Contact Person: {c_person}\n\n"
                    f"Regards,\n"
-                   f"{curr_user['Username']}")
+                   f"{curr_user['Username']}\n"
+                   f"Takecare HR Team")
+            
             wa_url = f"https://api.whatsapp.com/send?phone=91{r.get('Contact Number','')}&text={urllib.parse.quote(msg)}"
             st.markdown(f'<a href="{wa_url}" target="_blank" style="text-decoration:none;"><button style="background-color:#25D366; color:white; border:none; padding:8px; border-radius:5px; width:100%; font-weight:bold; cursor:pointer;">OPEN WA</button></a>', unsafe_allow_html=True)
