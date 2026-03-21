@@ -85,7 +85,7 @@ else:
     with h3:
         if st.button("Logout"): st.session_state.logged_in = False; st.rerun()
 
-    b1, b2, b3, b_search = st.columns([0.8, 0.8, 1.2, 2.5])
+    b2, b3, b_search = st.columns([0.8, 0.8, 1.2, 2.5])
     
     @st.dialog("📝 Update Status")
     def edit_candidate(row):
@@ -127,7 +127,6 @@ else:
                 row = [rid, datetime.now().strftime('%d-%m-%Y'), name, phone, cl_name, pos, c_date.strftime('%d-%m-%Y'), "Shortlisted", curr_user['Username'], "", "", feed]
                 cand_sheet.append_row(row); st.success("Saved!"); st.rerun()
 
-    with b1: st.button("🔍 Search")
     with b2: 
         if curr_user['Role'] in ['ADMIN', 'TL']: st.button("⚡ Filter")
     with b3:
