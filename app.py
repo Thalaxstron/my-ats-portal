@@ -81,7 +81,7 @@ else:
         st.markdown("<p class='slogan'>Successful HR Firm</p>", unsafe_allow_html=True)
     with h2:
         st.markdown(f"<p style='color: white; font-size: 18px; margin-bottom:0;'>Welcome, <b>{curr_user['Username']}</b></p>", unsafe_allow_html=True)
-        st.markdown("<p style='color: #00FF00; font-size:13px;'>Target: 80+ Calls / 3-5 Interview / 1+ Joining</p>", unsafe_allow_html=True)
+        st.markdown("<p style='color: #00FF00; font-size:13px;'>Today Target: 80+ Connected Telescreening Calls / 3-5 Interview / 1+ Joining</p>", unsafe_allow_html=True)
     with h3:
         if st.button("Logout"): st.session_state.logged_in = False; st.rerun()
 
