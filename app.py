@@ -41,7 +41,9 @@ def get_gsheet_client():
 client = get_gsheet_client()
 if client:
     sh = client.open("ATS_Cloud_Database")
-    user_sheet, client_sheet, cand_sheet = sh.worksheet("User_Master"), sh.worksheet("Client_Master"), sh.worksheet("ATS_Data")
+    user_sheet = sh.worksheet("User_Master")
+    client_sheet = sh.worksheet("Client_Master")
+    cand_sheet = sh.worksheet("ATS_Data")
 
 def get_next_ref_id():
     ids = cand_sheet.col_values(1)
@@ -56,14 +58,19 @@ if not st.session_state.logged_in:
     st.markdown("<h1 style='text-align: center; color: white;'>TAKECARE MANPOWER SERVICES PVT LTD</h1>", unsafe_allow_html=True)
     _, col_m, _ = st.columns([1, 1.2, 1])
     with col_m:
+        st.markdown("<div style='background: rgba(255,255,255,0.1); padding: 20px; border-radius: 15px;'>", unsafe_allow_html=True)
         with st.form("login"):
-            u_mail, p_pass = st.text_input("Email ID"), st.text_input("Password", type="password")
+            u_mail = st.text_input("Email ID")
+            p_pass = st.text_input("Password", type="password")
             if st.form_submit_button("ATS LOGIN", use_container_width=True):
                 udf = pd.DataFrame(user_sheet.get_all_records())
                 match = udf[(udf['Mail_ID'] == u_mail) & (udf['Password'].astype(str) == p_pass)]
                 if not match.empty:
-                    st.session_state.logged_in = True; st.session_state.user_data = match.iloc[0].to_dict(); st.rerun()
+                    st.session_state.logged_in = True
+                    st.session_state.user_data = match.iloc[0].to_dict()
+                    st.rerun()
                 else: st.error("Invalid Credentials")
+        st.markdown("</div>", unsafe_allow_html=True)
 
 # --- 4. MAIN DASHBOARD ---
 else:
@@ -74,6 +81,7 @@ else:
         st.markdown("<p class='slogan'>Successful HR Firm</p>", unsafe_allow_html=True)
     with h2:
         st.markdown(f"<p style='color: white; font-size: 18px; margin-bottom:0;'>Welcome, <b>{curr_user['Username']}</b></p>", unsafe_allow_html=True)
+        st.markdown("<p style='color: #00FF00; font-size:13px;'>Target: 80+ Calls / 3-5 Interview / 1+ Joining</p>", unsafe_allow_html=True)
     with h3:
         if st.button("Logout"): st.session_state.logged_in = False; st.rerun()
 
@@ -81,35 +89,47 @@ else:
     
     @st.dialog("📝 Update Status")
     def edit_candidate(row):
+        st.markdown(f"<p style='color:black;'>Editing: <b>{row['Candidate Name']}</b></p>", unsafe_allow_html=True)
         st_list = ["Shortlisted", "Interviewed", "Selected", "Rejected", "Onboarded", "Hold", "Left", "Project Success"]
         curr_st = str(row.get('Status', 'Shortlisted'))
-        new_st = st.selectbox("Update Status", st_list, index=st_list.index(curr_st) if curr_st in st_list else 0)
-        new_fb, evt_date = st.text_input("Feedback", value=row.get('Feedback', '')), st.date_input("Date")
+        idx_st = st_list.index(curr_st) if curr_st in st_list else 0
+        new_st = st.selectbox("Update Status", st_list, index=idx_st)
+        new_fb = st.text_input("Feedback", value=row.get('Feedback', ''))
+        evt_date = st.date_input("Date (Interview/Onboard)")
         if st.button("UPDATE DATA", use_container_width=True):
             idx = cand_sheet.find(row['Reference_ID']).row
             cand_sheet.update_cell(idx, 8, new_st); cand_sheet.update_cell(idx, 12, new_fb)
             if new_st == "Interviewed": cand_sheet.update_cell(idx, 7, evt_date.strftime('%d-%m-%Y'))
             if new_st == "Onboarded":
                 cand_sheet.update_cell(idx, 10, evt_date.strftime('%d-%m-%Y'))
-                cm = pd.DataFrame(client_sheet.get_all_records())
-                days = int(cm[cm['Client Name'] == row['Client Name']]['SR Days'].values[0])
-                cand_sheet.update_cell(idx, 11, (evt_date + timedelta(days=days)).strftime('%d-%m-%Y'))
+                cm_data = pd.DataFrame(client_sheet.get_all_records())
+                days_val = cm_data[cm_data['Client Name'] == row['Client Name']]['SR Days'].values
+                days = int(days_val[0]) if len(days_val) > 0 else 0
+                sr_dt = (evt_date + timedelta(days=days)).strftime('%d-%m-%Y')
+                cand_sheet.update_cell(idx, 11, sr_dt)
             st.rerun()
 
     @st.dialog("➕ New Shortlist")
     def add_shortlist():
         rid = get_next_ref_id()
+        st.markdown(f"<p style='color:black;'><b>Ref ID:</b> {rid} | <b>Date:</b> {datetime.now().strftime('%d-%m-%Y')}</p>", unsafe_allow_html=True)
         cm_df = pd.DataFrame(client_sheet.get_all_records())
         c1, c2 = st.columns(2)
         with c1:
             name, phone = st.text_input("Candidate Name"), st.text_input("Phone Number")
             cl_name = st.selectbox("Client", ["--Select--"] + sorted(cm_df['Client Name'].unique().tolist()))
         with c2:
-            pos = st.selectbox("Position", cm_df[cm_df['Client Name'] == cl_name]['Position'].tolist() if cl_name != "--Select--" else [])
-            c_date = st.date_input("Commitment Date")
+            plist = cm_df[cm_df['Client Name'] == cl_name]['Position'].tolist() if cl_name != "--Select--" else []
+            pos, c_date = st.selectbox("Position", plist), st.date_input("Commitment Date")
+        feed = st.text_area("Initial Feedback")
         if st.button("SAVE CANDIDATE", use_container_width=True):
-            cand_sheet.append_row([rid, datetime.now().strftime('%d-%m-%Y'), name, phone, cl_name, pos, c_date.strftime('%d-%m-%Y'), "Shortlisted", curr_user['Username'], "", "", st.text_area("Initial Feedback")]); st.rerun()
+            if name and phone and cl_name != "--Select--":
+                row = [rid, datetime.now().strftime('%d-%m-%Y'), name, phone, cl_name, pos, c_date.strftime('%d-%m-%Y'), "Shortlisted", curr_user['Username'], "", "", feed]
+                cand_sheet.append_row(row); st.success("Saved!"); st.rerun()
 
+    with b1: st.button("🔍 Search")
+    with b2: 
+        if curr_user['Role'] in ['ADMIN', 'TL']: st.button("⚡ Filter")
     with b3:
         if st.button("➕ New Shortlist"): add_shortlist()
     with b_search:
@@ -118,8 +138,8 @@ else:
     # --- 5. DATA TABLE & AUTO-HIDE LOGIC ---
     st.markdown("---")
     cols = st.columns([0.8, 1.2, 1, 1, 1.2, 1.2, 0.8, 1, 1, 0.8, 0.5, 0.5])
-    for c, t in zip(cols, ["Ref ID", "Candidate", "Contact", "Client", "Job", "Int Date", "Status", "Onboard", "SR Date", "HR Name", "Edit", "WA"]):
-        c.markdown(f"<div class='header-box'>{t}</div>", unsafe_allow_html=True)
+    titles = ["Ref ID", "Candidate", "Contact", "Client Name", "Position / Job", "Comm / Int Date", "Status", "Onboard Date", "SR Date", "HR Name", "Edit", "WA"]
+    for c, t in zip(cols, titles): c.markdown(f"<div class='header-box'>{t}</div>", unsafe_allow_html=True)
     
     data = pd.DataFrame(cand_sheet.get_all_records())
     data.columns = [str(c).strip() for c in data.columns]
@@ -127,15 +147,21 @@ else:
     if not data.empty:
         now = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
         def apply_scenarios(row):
-            st, ed, idt = str(row.get('Status', '')), str(row.get('Date', '')), str(row.get('Interview Date', ''))
-            e_dt = pd.to_datetime(ed, format='%d-%m-%Y', errors='coerce')
-            i_dt = pd.to_datetime(idt, format='%d-%m-%Y', errors='coerce')
-            if st == "Shortlisted" and pd.notnull(e_dt) and (now - e_dt).days >= 7: return False
-            if st in ["Selected", "Hold", "Interviewed"]:
+            status = str(row.get('Status', ''))
+            e_dt = pd.to_datetime(str(row.get('Date', '')), format='%d-%m-%Y', errors='coerce')
+            i_dt = pd.to_datetime(str(row.get('Interview Date', '')), format='%d-%m-%Y', errors='coerce')
+            
+            # Scenario 1: Shortlisted (Hide if 7 days or more)
+            if status == "Shortlisted":
+                if pd.notnull(e_dt) and (now - e_dt).days >= 7: return False
+            # Scenario 2: Others (30 Days)
+            if status in ["Selected", "Hold", "Interviewed"]:
                 ref = i_dt if pd.notnull(i_dt) else e_dt
                 if pd.notnull(ref) and (now - ref).days > 30: return False
-            if st in ["Left", "Rejected"]: return False
+            # Scenario 3: Immediate Hide
+            if status in ["Left", "Rejected"]: return False
             return True
+
         data = data[data.apply(apply_scenarios, axis=1)]
 
     data = data.iloc[::-1]
@@ -149,11 +175,19 @@ else:
         r_cols = st.columns([0.8, 1.2, 1, 1, 1.2, 1.2, 0.8, 1, 1, 0.8, 0.5, 0.5])
         fields = ['Reference_ID', 'Candidate Name', 'Contact Number', 'Client Name', 'Job Title', 'Interview Date', 'Status', 'Joining Date', 'SR Date', 'HR Name']
         for idx, f in enumerate(fields): r_cols[idx].markdown(f"<div class='row-text'>{r.get(f,'')}</div>", unsafe_allow_html=True)
+        
         if r_cols[10].button("📝", key=f"e_{r.get('Reference_ID','NA')}"): edit_candidate(r)
         if r_cols[11].button("📲", key=f"w_{r.get('Reference_ID','NA')}"):
             c_info = cl_df[cl_df['Client Name'] == r.get('Client Name')]
             c_addr = c_info.iloc[0].get('Address', 'N/A') if not c_info.empty else "N/A"
             c_map = c_info.iloc[0].get('Map Link', 'N/A') if not c_info.empty else "N/A"
             c_person = c_info.iloc[0].get('Contact Person', 'HR Dept') if not c_info.empty else "HR Dept"
-            msg = f"Dear {r.get('Candidate Name')},\n\nInterview confirmed at {r.get('Client Name')}.\nAddress: {c_addr}\nMap: {c_map}\nContact: {c_person}\n\nRegards,\n{curr_user['Username']}"
-            st.markdown(f'<a href="https://api.whatsapp.com/send?phone=91{r.get("Contact Number")}&text={urllib.parse.quote(msg)}" target="_blank" style="text-decoration:none;"><button style="background-color:#25D366; color:white; border:none; padding:8px; border-radius:5px; width:100%; font-weight:bold; cursor:pointer;">OPEN WA</button></a>', unsafe_allow_html=True)
+            msg = (f"Dear {r.get('Candidate Name')},\n\n"
+                   f"Interview confirmed at {r.get('Client Name')}.\n"
+                   f"Address: {c_addr}\n"
+                   f"Map: {c_map}\n"
+                   f"Contact: {c_person}\n\n"
+                   f"Regards,\n"
+                   f"{curr_user['Username']}")
+            wa_url = f"https://api.whatsapp.com/send?phone=91{r.get('Contact Number','')}&text={urllib.parse.quote(msg)}"
+            st.markdown(f'<a href="{wa_url}" target="_blank" style="text-decoration:none;"><button style="background-color:#25D366; color:white; border:none; padding:8px; border-radius:5px; width:100%; font-weight:bold; cursor:pointer;">OPEN WA</button></a>', unsafe_allow_html=True)
